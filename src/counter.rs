@@ -1,4 +1,6 @@
-use std::ops::{Add, Sub};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixedLinearExpr {
     coefficient: i64,
     constant: i64,
@@ -15,6 +17,7 @@ impl FixedLinearExpr {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CounterExpr {
     Constant(i64),
     LinearFixed(FixedLinearExpr),
@@ -24,7 +27,7 @@ pub enum CounterExpr {
 impl Add for CounterExpr {
     type Output = Self;
 
-    pub fn add(self, other: CounterExpr) -> CounterExpr {
+    fn add(self, other: CounterExpr) -> CounterExpr {
         match (self, other) {
             (CounterExpr::Constant(a), CounterExpr::Constant(b)) => CounterExpr::Constant(a + b),
             (CounterExpr::Constant(a), CounterExpr::LinearFixed(b)) => CounterExpr::LinearFixed(
@@ -40,7 +43,6 @@ impl Add for CounterExpr {
                     a.min_n.min(b.min_n),
                 ))
             }
-            _ => unimplemented!(),
         }
     }
 }
@@ -53,7 +55,7 @@ impl AddAssign for CounterExpr {
 
 impl Sub for CounterExpr {
     type Output = Self;
-    pub fn sub(self, other: CounterExpr) -> CounterExpr {
+    fn sub(self, other: CounterExpr) -> CounterExpr {
         match (self, other) {
             (CounterExpr::Constant(a), CounterExpr::Constant(b)) => CounterExpr::Constant(a - b),
             (CounterExpr::Constant(a), CounterExpr::LinearFixed(b)) => CounterExpr::LinearFixed(
@@ -69,19 +71,19 @@ impl Sub for CounterExpr {
                     a.min_n.min(b.min_n),
                 ))
             }
-            _ => unimplemented!(),
         }
     }
 }
-impl MulAssign for CounterExpr {
-    fn mul_assign(&mut self, other: CounterExpr) {
-        *self = self.clone() * other;
+
+impl SubAssign for CounterExpr {
+    fn sub_assign(&mut self, other: CounterExpr) {
+        *self = self.clone() - other;
     }
 }
 
 impl Mul for CounterExpr {
     type Output = Self;
-    pub fn mul(self, other: CounterExpr) -> CounterExpr {
+    fn mul(self, other: CounterExpr) -> CounterExpr {
         match (self, other) {
             (CounterExpr::Constant(a), CounterExpr::Constant(b)) => CounterExpr::Constant(a * b),
             (CounterExpr::Constant(a), CounterExpr::LinearFixed(b)) => CounterExpr::LinearFixed(

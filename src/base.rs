@@ -69,6 +69,21 @@ impl Instruction {
         }
         inst
     }
+
+    pub fn to_str(&self) -> String {
+        format!(
+            "{}{}{}",
+            match self.write_symbol {
+                Symbol::Zero => '0',
+                Symbol::One => '1',
+            },
+            match self.dir {
+                Direction::Left => 'L',
+                Direction::Right => 'R',
+            },
+            state_to_str(self.next_state)
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
