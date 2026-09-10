@@ -1,7 +1,8 @@
 [package]
+edition = "2024"
 name = "yan_busy-beaver"
 version = "0.1.0"
-edition = "2024"
 
 [dependencies]
-clap = { version = "4.6.6", features = ["derive"] }
+clap = {version = "4.6.6", features = ["derive"]}
+itertools = "0.14"
