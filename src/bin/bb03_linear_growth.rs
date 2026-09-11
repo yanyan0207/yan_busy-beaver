@@ -78,7 +78,10 @@ fn check_min_changed_sequences(
             if is_repeated {
                 Transition::RepeatedRulesLinear(RepeatedRulesLinearTransition::new(
                     s,
-                    FixedLinearExpr::new(1, 0, 0),
+                    FixedLinearExpr {
+                        coefficient: 1,
+                        constant: 0,
+                    },
                 ))
             } else {
                 Transition::Rules(RulesTransition::new(s))
@@ -96,7 +99,10 @@ fn check_min_changed_sequences(
             if is_repeated {
                 Block::RepeatedSymbolsLinear(RepeatedSymbolsLinearBlock::new(
                     s,
-                    FixedLinearExpr::new(1, 0, 0),
+                    FixedLinearExpr {
+                        coefficient: 1,
+                        constant: 0,
+                    },
                 ))
             } else {
                 Block::Symbols(SymbolsBlock::new(s))

@@ -8,23 +8,33 @@ pub enum Block {
     RepeatedSymbolsLinear(RepeatedSymbolsLinearBlock),
 }
 
+impl Block {
+    pub fn size(&self) -> CounterExpr {
+        match self {
+            Block::Symbols(b) => CounterExpr::Constant(b.size()),
+            Block::RepeatedSymbolsLinear(b) => CounterExpr::LinearFixed(b.size()),
+        }
+    }
+}
 pub struct SymbolsBlock {
     symbols: Vec<Symbol>,
-    current_block_index: Option<i64>,
 }
 
 impl SymbolsBlock {
     pub fn new(symbols: &[Symbol]) -> Self {
         Self {
             symbols: symbols.to_vec(),
-            current_block_index: None,
         }
     }
+
+    pub fn size(&self) -> i64 {
+        self.symbols.len() as i64
+    }
 }
+
 pub struct RepeatedSymbolsLinearBlock {
     block: SymbolsBlock,
     repeat_count: FixedLinearExpr,
-    current_block_index: Option<FixedLinearExpr>,
 }
 
 impl RepeatedSymbolsLinearBlock {
@@ -32,7 +42,10 @@ impl RepeatedSymbolsLinearBlock {
         Self {
             block: SymbolsBlock::new(symbols),
             repeat_count,
-            current_block_index: None,
         }
+    }
+
+    pub fn size(&self) -> FixedLinearExpr {
+        self.repeat_count * self.block.size()
     }
 }

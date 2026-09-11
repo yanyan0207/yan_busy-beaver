@@ -93,6 +93,12 @@ pub struct Rule {
     pub instruction: Instruction,
 }
 
+impl Rule {
+    pub fn delta(&self) -> i64 {
+        self.instruction.dir.delta()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuleTable {
     pub rules: Vec<Rule>,
