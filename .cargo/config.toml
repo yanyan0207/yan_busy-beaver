@@ -1,0 +1,3 @@
+[alias]
+lg_03 = ["run", "--bin", "bb03_linear_growth", "--", "0RB 0LA 0LC 1RA 1LA 0RH"]
+lg_04 = ["run", "--bin", "bb03_linear_growth", "--", "0RB 0RH 0LC 1RA 0LD 0RH 1LA 1LC"]

@@ -1,10 +1,10 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Symbol {
     Zero,
     One,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Direction {
     Left,
     Right,
@@ -33,7 +33,7 @@ pub fn state_to_str(state: State) -> &'static str {
         _ => panic!("Invalid state"),
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Instruction {
     pub write_symbol: Symbol,
     pub dir: Direction,
@@ -86,7 +86,7 @@ impl Instruction {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rule {
     pub current_state: State,
     pub read_symbol: Symbol,

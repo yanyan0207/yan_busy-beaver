@@ -9,8 +9,12 @@ pub fn find_sequence_with_arithmetic_differences(
     let mut arr = arr.iter().copied().collect::<Vec<i64>>();
     arr.sort();
 
+    let mut searched = HashSet::new();
     let mut results = vec![];
     for combination in arr.iter().copied().combinations(difference_order + 3) {
+        if searched.contains(&combination) {
+            continue;
+        }
         // 階差数列になっているか確認
         let diff =
             get_diff_for_sequence_with_arithmetic_differences(&combination, difference_order);
@@ -31,12 +35,15 @@ pub fn find_sequence_with_arithmetic_differences(
         if result.is_empty() {
             continue;
         }
+        result.windows(difference_order + 3).for_each(|w| {
+            searched.insert(w.to_vec());
+        });
         results.push(result);
     }
     results
 }
 
-fn next_for_sequence_with_arithmetic_differences(arr: &[i64], difference_order: usize) -> i64 {
+pub fn next_for_sequence_with_arithmetic_differences(arr: &[i64], difference_order: usize) -> i64 {
     let arr = arr[arr.len() - (difference_order + 2)..].to_vec();
 
     let mut nth_last_datas = vec![arr.last().copied().unwrap()];
@@ -51,7 +58,7 @@ fn next_for_sequence_with_arithmetic_differences(arr: &[i64], difference_order: 
     nth_last_datas.last().copied().unwrap()
 }
 
-fn get_diff_for_sequence_with_arithmetic_differences(
+pub fn get_diff_for_sequence_with_arithmetic_differences(
     arr: &[i64],
     difference_order: usize,
 ) -> Option<i64> {
@@ -100,7 +107,9 @@ mod tests {
 
     #[test]
     fn returns_empty_when_no_progression_exists() {
-        assert!(find_sequence_with_arithmetic_differences(&HashSet::from([1, 2, 4, 8]), 1).is_empty());
+        assert!(
+            find_sequence_with_arithmetic_differences(&HashSet::from([1, 2, 4, 8]), 1).is_empty()
+        );
     }
 
     #[test]
@@ -114,7 +123,9 @@ mod tests {
     #[test]
     fn extends_quadratic_sequence() {
         let input = HashSet::from([1, 4, 9, 16, 25, 36]);
-        assert!(find_sequence_with_arithmetic_differences(&input, 2)
-            .contains(&vec![1, 4, 9, 16, 25, 36]));
+        assert!(
+            find_sequence_with_arithmetic_differences(&input, 2)
+                .contains(&vec![1, 4, 9, 16, 25, 36])
+        );
     }
 }
