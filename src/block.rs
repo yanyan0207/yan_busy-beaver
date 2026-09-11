@@ -14,9 +14,9 @@ pub struct SymbolsBlock {
 }
 
 impl SymbolsBlock {
-    pub fn new(symbols: Vec<Symbol>) -> Self {
+    pub fn new(symbols: &[Symbol]) -> Self {
         Self {
-            symbols,
+            symbols: symbols.to_vec(),
             current_block_index: None,
         }
     }
@@ -28,7 +28,7 @@ pub struct RepeatedSymbolsLinearBlock {
 }
 
 impl RepeatedSymbolsLinearBlock {
-    pub fn new(symbols: Vec<Symbol>, repeat_count: FixedLinearExpr) -> Self {
+    pub fn new(symbols: &[Symbol], repeat_count: FixedLinearExpr) -> Self {
         Self {
             block: SymbolsBlock::new(symbols),
             repeat_count,

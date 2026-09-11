@@ -2,6 +2,7 @@ use std::ops::Range;
 
 use clap::Parser;
 use itertools::Itertools;
+use std::fmt::Debug;
 use yan_busy_beaver::algorithm::arithmetic_difference::find_sequence_with_arithmetic_differences;
 use yan_busy_beaver::algorithm::arithmetic_difference::get_diff_for_sequence_with_arithmetic_differences;
 use yan_busy_beaver::algorithm::arithmetic_difference::next_for_sequence_with_arithmetic_differences;
@@ -10,11 +11,13 @@ use yan_busy_beaver::base::Rule;
 use yan_busy_beaver::base::RuleTable;
 use yan_busy_beaver::base::State;
 use yan_busy_beaver::base::Symbol;
+use yan_busy_beaver::block::Block;
+use yan_busy_beaver::block::RepeatedSymbolsLinearBlock;
+use yan_busy_beaver::block::SymbolsBlock;
 use yan_busy_beaver::counter::FixedLinearExpr;
 use yan_busy_beaver::transition::RepeatedRulesLinearTransition;
 use yan_busy_beaver::transition::RulesTransition;
 use yan_busy_beaver::transition::Transition;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RawExecutionRecord {
     step: i64,
@@ -48,34 +51,28 @@ fn check(pattern: &str, max_steps: usize) -> Option<()> {
 }
 
 fn check_min_changed_sequences(
-    min_changed_sequences: &Vec<i64>,
+    min_changed_sequences: &[i64],
     execution_records: &[RawExecutionRecord],
 ) -> Option<()> {
     // 各minポジション変化点の間の実行履歴ブロックを取得
-    let execution_records_list = min_changed_sequences
-        .windows(2)
-        .map(|w| &execution_records[w[0] as usize..w[1] as usize])
-        .collect::<Vec<_>>();
-
-    // 最初の3つの実行履歴とデータに対して繰り返しブロックを探索
-    let prev_executions = execution_records_list[0];
-    let current_executions = execution_records_list[1];
-    let next_executions = execution_records_list[2];
-    let repeated_execution_range = find_growing_repeat_block(
-        prev_executions,
-        current_executions,
-        next_executions,
-        |a, b| a.rule == b.rule,
-    )?;
-
-    // Rule配列
-    let current_rule_seq = current_executions
+    let rules_all = execution_records
         .iter()
         .map(|r| r.rule)
+        .collect::<Vec<Rule>>();
+    let rules_list = min_changed_sequences
+        .windows(2)
+        .map(|w| &rules_all[w[0] as usize..w[1] as usize])
+        .collect::<Vec<_>>();
+    let datas_list = min_changed_sequences
+        .iter()
+        .map(|i| execution_records[*i as usize].data.as_slice())
         .collect::<Vec<_>>();
 
+    let repeated_execution_range = find_growing_repeat_block(&rules_list)?;
+
+    // リピートを含むトランジションを構築
     let transitions = collect_blocks_with_repeated_range(
-        &current_rule_seq,
+        rules_list[1],
         &repeated_execution_range,
         |s, is_repeated| {
             if is_repeated {
@@ -90,14 +87,23 @@ fn check_min_changed_sequences(
     );
 
     // 各minポジション変化点の間の繰り返しテープブロックを探索
-    let repeated_tape_range = find_growing_repeat_block(
-        &prev_executions[0].data,
-        &current_executions[0].data,
-        &next_executions[0].data,
-        |a, b| a == b,
-    )?;
+    let repeated_tape_range = find_growing_repeat_block(&datas_list)?;
 
-    print!("{:?} {:?}", min_changed_sequences, repeated_execution_range);
+    let tape_blocks = collect_blocks_with_repeated_range(
+        datas_list[1],
+        &repeated_tape_range,
+        |s, is_repeated| {
+            if is_repeated {
+                Block::RepeatedSymbolsLinear(RepeatedSymbolsLinearBlock::new(
+                    s,
+                    FixedLinearExpr::new(1, 0, 0),
+                ))
+            } else {
+                Block::Symbols(SymbolsBlock::new(s))
+            }
+        },
+    );
+
     Some(())
 }
 
@@ -199,15 +205,17 @@ fn find_min_changed_sequences_by_rule(
 }
 
 // 3つのシーケンスに対して、成長する繰り返しブロックを見つける関数
-fn find_growing_repeat_block<T, F>(
-    previous_seq: &[T],
-    current_seq: &[T],
-    next_seq: &[T],
-    eq: F,
-) -> Option<Vec<Range<usize>>>
+fn find_growing_repeat_block<T>(sequences: &[&[T]]) -> Option<Vec<Range<usize>>>
 where
-    F: Fn(&T, &T) -> bool,
+    T: PartialEq + Copy + Debug,
 {
+    if sequences.len() < 3 {
+        return None;
+    }
+    let previous_seq = sequences[0];
+    let current_seq = sequences[1];
+    let next_seq = sequences[2];
+
     if next_seq.len() <= current_seq.len() || current_seq.len() <= previous_seq.len() {
         return None;
     }
@@ -233,12 +241,12 @@ where
         let first_diff_position = previous_seq
             .iter()
             .zip(current_seq)
-            .position(|(a, b)| !eq(a, b))
+            .position(|(a, b)| a != b)
             .unwrap_or(previous_seq.len());
         let second_diff_position = current_seq
             .iter()
             .zip(next_seq)
-            .position(|(a, b)| !eq(a, b))
+            .position(|(a, b)| a != b)
             .unwrap_or(current_seq.len());
 
         if first_diff_position == 0 && second_diff_position == 0 {
@@ -253,9 +261,7 @@ where
         if block_length > 0 {
             if next_seq.len() < second_diff_position + block_length
                 || next_seq[second_diff_position..second_diff_position + block_length]
-                    .iter()
-                    .zip(&current_seq[first_diff_position..first_diff_position + block_length])
-                    .any(|(a, b)| !eq(a, b))
+                    != current_seq[first_diff_position..first_diff_position + block_length]
             {
                 return None;
             }
@@ -274,12 +280,28 @@ where
     if repeat_block_ranges.is_empty() {
         return None;
     }
+
+    for (i, seq) in sequences.iter().enumerate() {
+        let created = collect_blocks_with_repeated_range(
+            sequences[1],
+            &repeat_block_ranges,
+            |seq, is_repeated| seq.to_vec().repeat(if is_repeated { i } else { 1 }),
+        )
+        .into_iter()
+        .flatten()
+        .collect::<Vec<T>>();
+
+        println!("Original: {:?}, Created: {:?}", sequences[i], created);
+        if *seq != created {
+            return None;
+        }
+    }
     Some(repeat_block_ranges)
 }
 
 fn collect_blocks_with_repeated_range<T, S, F>(
     sequences: &[T],
-    repeated_range: &Vec<Range<usize>>,
+    repeated_ranges: &Vec<Range<usize>>,
     from_t: F,
 ) -> Vec<S>
 where
@@ -287,14 +309,17 @@ where
 {
     let mut work = 0;
     let mut ret = vec![];
-    for i in repeated_range {
+    for repeated_range in repeated_ranges {
         // 静的トランジションをプッシュ
-        if i.start > work {
-            ret.push(from_t(&sequences[work..i.start], false));
+        if repeated_range.start > work {
+            ret.push(from_t(&sequences[work..repeated_range.start], false));
         }
         // 繰り返しブロックをプッシュ
-        ret.push(from_t(&sequences[i.start..i.end], true));
-        work = i.end;
+        ret.push(from_t(
+            &sequences[repeated_range.start..repeated_range.end],
+            true,
+        ));
+        work = repeated_range.end;
     }
     // 残りの静的トランジションをプッシュ
     if work < sequences.len() {
