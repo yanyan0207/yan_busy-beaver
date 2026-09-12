@@ -42,7 +42,21 @@ impl Block {
     }
 }
 
-#[derive(Clone)]
+impl PartialEq for Block {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Block::Symbols(a), Block::Symbols(b)) => a == b,
+            (Block::Symbols(a), Block::RepeatedSymbolsLinear(b)) => {
+                RepeatedSymbolsLinearBlock::new(a, FixedLinearExpr::from_i64(1)) == *b
+            }
+            (Block::RepeatedSymbolsLinear(a), Block::Symbols(b)) => {
+                RepeatedSymbolsLinearBlock::new(b, FixedLinearExpr::from_i64(1)) == *a
+            }
+            (Block::RepeatedSymbolsLinear(a), Block::RepeatedSymbolsLinear(b)) => a == b,
+        }
+    }
+}
+#[derive(Clone, PartialEq, Eq)]
 pub struct SymbolsBlock {
     symbols: Vec<Symbol>,
 }
@@ -83,7 +97,7 @@ impl SymbolsBlock {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq)]
 pub struct RepeatedSymbolsLinearBlock {
     block: SymbolsBlock,
     repeat_count: FixedLinearExpr,
@@ -146,5 +160,16 @@ impl RepeatedSymbolsLinearBlock {
             }));
         }
         Some([left_results, right_results])
+    }
+}
+
+impl PartialEq for RepeatedSymbolsLinearBlock {
+    fn eq(&self, other: &Self) -> bool {
+        if self.size() != other.size() {
+            return false;
+        }
+        // リピートブロックの比較
+        self.block.symbols.repeat(other.block.size() as usize)
+            == other.block.symbols.repeat(self.block.size() as usize)
     }
 }

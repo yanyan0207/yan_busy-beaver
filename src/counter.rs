@@ -20,7 +20,6 @@ impl CounterExpr {
                 }
                 Some(l.constant)
             }
-            _ => None,
         }
     }
 
@@ -31,7 +30,6 @@ impl CounterExpr {
                 coefficient: 0,
                 constant: *c,
             }),
-            _ => None,
         }
     }
 }

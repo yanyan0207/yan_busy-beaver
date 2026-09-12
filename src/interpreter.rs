@@ -1,8 +1,6 @@
-use crate::block::Block;
 use crate::counter::CounterExpr;
 use crate::tape::Tape;
-use crate::transition::{self, RepeatedRulesLinearTransition, RulesTransition, Transition};
-use crate::{base::State, counter::FixedLinearExpr};
+use crate::transition::Transition;
 
 pub struct BlockInfo {
     pub start: CounterExpr,
@@ -14,36 +12,30 @@ pub struct BlockInfo {
 }
 pub struct Context {
     pub step: i64,
-    pub state: State,
     pub position: CounterExpr,
-    pub current_block_index: i64,
 }
 
-fn process_rules_transition(
-    context: &mut Context,
-    blocks: &mut [Block],
-    transition: &RulesTransition,
-) {
-}
-
-fn process_repeated_rules_linear_transition(
-    context: &mut Context,
-    blocks: &mut [Block],
-    transition: &RepeatedRulesLinearTransition,
-) {
-}
-
-pub fn process(context: &mut Context, tape: &mut Tape, transition: &Transition) {
+pub fn process(context: &mut Context, tape: &mut Tape, transition: &Transition) -> Option<()> {
     let io_range = transition.io_range() + context.position;
 
     let blocks_in_range = tape.split_range(io_range);
 
     // ブロックが想定通りか比較
-    Tape::new(blocks_in_range, tape.position() - io_range.start).compare(transition.input_tape());
-}
+    let cutted_tape = Tape::new(blocks_in_range);
+    let is_equal = Tape::compare(&cutted_tape, transition.input_tape());
+    if !is_equal {
+        return None;
+    }
 
-struct FoundBlockInfo<'a> {
-    pub index: i64,
-    pub index_in_block: CounterExpr,
-    pub block: &'a Block,
+    // 想定通りなら入れ替え
+    let (block_index, block_rem) = tape.find_block(io_range.start);
+    assert!(block_rem == CounterExpr::Constant(0));
+    tape.remove_blocks(block_index, cutted_tape.blocks().len() as i64);
+    tape.insert_blocks(block_index, transition.output_tape().blocks());
+
+    // 情報の更新
+    context.position += transition.to_position();
+    context.step += 1;
+
+    Some(())
 }

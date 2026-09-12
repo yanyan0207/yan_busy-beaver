@@ -1,5 +1,3 @@
-use std::io::Repeat;
-
 use crate::{
     base::{Rule, State, Symbol},
     block::{Block, RepeatedSymbolsLinearBlock, SymbolsBlock},
@@ -18,6 +16,13 @@ impl Transition {
         match self {
             Transition::Rules(t) => t.io_range,
             Transition::RepeatedRulesLinear(t) => t.io_range,
+        }
+    }
+
+    pub fn to_position(&self) -> CounterExpr {
+        match self {
+            Transition::Rules(t) => CounterExpr::Constant(t.to_position),
+            Transition::RepeatedRulesLinear(t) => CounterExpr::LinearFixed(t.to_position),
         }
     }
 
@@ -68,7 +73,7 @@ impl RulesTransition {
         let mut visited = vec![false; (end - start + 1) as usize];
         let mut input_block = vec![Symbol::Zero; (end - start + 1) as usize];
         let mut output_block = vec![Symbol::Zero; (end - start + 1) as usize];
-        for (i, (rule, pos)) in rules.iter().zip(pos_list.iter()).enumerate() {
+        for (rule, pos) in rules.iter().zip(pos_list.iter()) {
             let pos = (pos - start) as usize;
             if !visited[pos] {
                 visited[pos] = true;
@@ -81,14 +86,8 @@ impl RulesTransition {
             io_range,
             rules: rules.to_vec(),
             to_position,
-            input_tape: Tape::new(
-                vec![Block::Symbols(SymbolsBlock::new(&input_block))],
-                CounterExpr::Constant(-start),
-            ),
-            output_tape: Tape::new(
-                vec![Block::Symbols(SymbolsBlock::new(&output_block))],
-                CounterExpr::Constant(to_position - start),
-            ),
+            input_tape: Tape::new(vec![Block::Symbols(SymbolsBlock::new(&input_block))]),
+            output_tape: Tape::new(vec![Block::Symbols(SymbolsBlock::new(&output_block))]),
         }
     }
 
@@ -144,16 +143,11 @@ impl RepeatedRulesLinearTransition {
             {
                 let repeat_input_block =
                     RepeatedSymbolsLinearBlock::new(rule_input_block, repeat_count);
-                let input_tape = Tape::new(
-                    vec![Block::RepeatedSymbolsLinear(repeat_input_block)],
-                    rule_io_range.start * -1,
-                );
+                let input_tape = Tape::new(vec![Block::RepeatedSymbolsLinear(repeat_input_block)]);
                 let repeat_output_block =
                     RepeatedSymbolsLinearBlock::new(rule_output_block, repeat_count);
-                let output_tape = Tape::new(
-                    vec![Block::RepeatedSymbolsLinear(repeat_output_block)],
-                    CounterExpr::LinearFixed(to_position),
-                );
+                let output_tape =
+                    Tape::new(vec![Block::RepeatedSymbolsLinear(repeat_output_block)]);
                 (input_tape, output_tape)
             }
             // 重なりのあるリピートの場合の処理
@@ -169,7 +163,7 @@ impl RepeatedRulesLinearTransition {
                     Block::Symbols(rule_input_block.clone()),
                     Block::RepeatedSymbolsLinear(repeat_input_block),
                 ];
-                let input_tape = Tape::new(input_blocks, rule_io_range.start * -1);
+                let input_tape = Tape::new(input_blocks);
 
                 // 重なりのあるリピートの場合の出力ブロックの作成
                 let output_repeat_symbols = &rule_output_symbols[..block_size as usize];
@@ -181,10 +175,7 @@ impl RepeatedRulesLinearTransition {
                     Block::RepeatedSymbolsLinear(output_repeat_block),
                     Block::Symbols(rule_output_block.clone()),
                 ];
-                let output_tape = Tape::new(
-                    output_blocks,
-                    CounterExpr::LinearFixed(to_position) - rule_io_range.start,
-                );
+                let output_tape = Tape::new(output_blocks);
                 (input_tape, output_tape)
             };
             Self {

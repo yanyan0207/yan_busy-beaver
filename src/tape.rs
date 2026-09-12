@@ -2,18 +2,14 @@ use crate::block::Block;
 use crate::counter::CounterExpr;
 use crate::range::Range;
 
+#[derive(Clone)]
 pub struct Tape {
     blocks: Vec<Block>,
-    position: CounterExpr,
 }
 
 impl Tape {
-    pub fn new(blocks: Vec<Block>, position: CounterExpr) -> Self {
-        Self { blocks, position }
-    }
-
-    pub fn position(&self) -> CounterExpr {
-        self.position
+    pub fn new(blocks: Vec<Block>) -> Self {
+        Self { blocks }
     }
 
     pub fn size(&self) -> CounterExpr {
@@ -30,15 +26,62 @@ impl Tape {
         &self.blocks
     }
 
-    pub fn compare(&self, other: &Tape) -> bool {
-        // 比較対象のテープと現在のテープのブロック構造を比較する
-        false
+    fn standaraized(tape: &Tape) -> Tape {
+        // ここで必要な標準化処理を行う
+        // 空のブロックは削除
+        let mut tape = tape.clone();
+        for i in (0..tape.blocks.len()).rev() {
+            if tape.blocks[i].size() == CounterExpr::Constant(0) {
+                tape.blocks.remove(i);
+            }
+        }
+        tape
+    }
+
+    pub fn compare(lhs: &Tape, rhs: &Tape) -> bool {
+        // サイズを調べる
+        if lhs.size() != rhs.size() {
+            return false;
+        }
+
+        let mut lhs = Self::standaraized(lhs);
+        let mut rhs = Self::standaraized(rhs);
+
+        // ブロックを比較する
+        loop {
+            if lhs.blocks().is_empty() && rhs.blocks().is_empty() {
+                return true;
+            } else if lhs.blocks().is_empty() || rhs.blocks().is_empty() {
+                return false;
+            }
+
+            // 先頭ブロックを比較する
+            let lhs_first = lhs.block(0);
+            let rhs_first = rhs.block(0);
+
+            // ブロックのサイズを比較して、必要に応じて分割する
+            if rhs_first.size() < lhs_first.size() {
+                lhs.split_at(rhs_first.size());
+                continue;
+            } else if lhs_first.size() < rhs_first.size() {
+                rhs.split_at(lhs_first.size());
+                continue;
+            }
+
+            // サイズが等しい場合は先頭ブロックを比較
+            if lhs_first != rhs_first {
+                return false;
+            }
+
+            // 先頭ブロックを削除
+            lhs.remove_block(0);
+            rhs.remove_block(0);
+        }
     }
 
     pub fn reversed(&self) -> Self {
         Self {
             blocks: self.blocks.iter().rev().map(|b| b.reversed()).collect(),
-            position: self.size() - self.position - 1,
         }
     }
 
