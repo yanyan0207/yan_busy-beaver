@@ -97,6 +97,21 @@ impl Rule {
     pub fn delta(&self) -> i64 {
         self.instruction.dir.delta()
     }
+
+    pub fn reversed(&self) -> Self {
+        Self {
+            current_state: self.current_state,
+            read_symbol: self.read_symbol,
+            instruction: Instruction {
+                write_symbol: self.instruction.write_symbol,
+                dir: match self.instruction.dir {
+                    Direction::Left => Direction::Right,
+                    Direction::Right => Direction::Left,
+                },
+                next_state: self.instruction.next_state,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -7,6 +7,15 @@ pub struct Range {
     pub end: CounterExpr,
 }
 
+impl Range {
+    pub fn reversed(&self) -> Self {
+        Self {
+            start: self.end * -1,
+            end: self.start * -1,
+        }
+    }
+}
+
 impl Add for Range {
     type Output = Range;
 

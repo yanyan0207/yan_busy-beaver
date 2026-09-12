@@ -98,7 +98,7 @@ fn check_min_changed_sequences(
         |s, is_repeated| {
             if is_repeated {
                 Block::RepeatedSymbolsLinear(RepeatedSymbolsLinearBlock::new(
-                    s,
+                    &SymbolsBlock::new(s),
                     FixedLinearExpr {
                         coefficient: 1,
                         constant: 0,
