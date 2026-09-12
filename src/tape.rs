@@ -26,6 +26,10 @@ impl Tape {
         &self.blocks
     }
 
+    pub fn blocks_mut(&mut self) -> &mut Vec<Block> {
+        &mut self.blocks
+    }
+
     fn standaraized(tape: &Tape) -> Tape {
         // ここで必要な標準化処理を行う
         // 空のブロックは削除

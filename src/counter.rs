@@ -23,13 +23,13 @@ impl CounterExpr {
         }
     }
 
-    pub fn as_linear_fixed(&self) -> Option<FixedLinearExpr> {
+    pub fn as_linear_fixed(&self) -> FixedLinearExpr {
         match self {
-            CounterExpr::LinearFixed(l) => Some(*l),
-            CounterExpr::Constant(c) => Some(FixedLinearExpr {
+            CounterExpr::LinearFixed(l) => *l,
+            CounterExpr::Constant(c) => FixedLinearExpr {
                 coefficient: 0,
                 constant: *c,
-            }),
+            },
         }
     }
 }

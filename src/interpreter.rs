@@ -1,3 +1,6 @@
+use crate::base::Symbol;
+use crate::block::Block;
+use crate::block::{RepeatedSymbolsLinearBlock, SymbolsBlock};
 use crate::counter::CounterExpr;
 use crate::tape::Tape;
 use crate::transition::Transition;
@@ -16,8 +19,34 @@ pub struct Context {
 }
 
 pub fn process(context: &mut Context, tape: &mut Tape, transition: &Transition) -> Option<()> {
-    let io_range = transition.io_range() + context.position;
+    // 入力テープの範囲を計算
+    let mut io_range = transition.io_range() + context.position;
 
+    // 領域が足りなければ追加
+    if io_range.end >= tape.size() {
+        let remain = (io_range.end - tape.size()).as_linear_fixed() + 1;
+        tape.insert(
+            tape.blocks().len() as i64,
+            &Block::RepeatedSymbolsLinear(RepeatedSymbolsLinearBlock::new(
+                &SymbolsBlock::new(vec![Symbol::Zero; 1].as_slice()),
+                remain,
+            )),
+        );
+    }
+    if io_range.start < CounterExpr::Constant(0) {
+        let remain = (io_range.start * -1).as_linear_fixed();
+        tape.insert(
+            0,
+            &Block::RepeatedSymbolsLinear(RepeatedSymbolsLinearBlock::new(
+                &SymbolsBlock::new(vec![Symbol::Zero; 1].as_slice()),
+                remain,
+            )),
+        );
+        io_range = io_range + CounterExpr::LinearFixed(remain);
+        context.position += CounterExpr::LinearFixed(remain);
+    }
+
+    // テープから
     let blocks_in_range = tape.split_range(io_range);
 
     // ブロックが想定通りか比較

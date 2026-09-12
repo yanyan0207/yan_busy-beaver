@@ -37,7 +37,7 @@ impl Block {
                 let [left, right] = b.split_at(index.as_constant().unwrap())?;
                 Some([vec![Block::Symbols(left)], vec![Block::Symbols(right)]])
             }
-            Block::RepeatedSymbolsLinear(b) => b.split_at(index.as_linear_fixed().unwrap()),
+            Block::RepeatedSymbolsLinear(b) => b.split_at(index.as_linear_fixed()),
         }
     }
 }
@@ -111,6 +111,14 @@ impl RepeatedSymbolsLinearBlock {
         }
     }
 
+    pub fn repeat_count(&self) -> FixedLinearExpr {
+        self.repeat_count
+    }
+
+    pub fn set_repeat_count(&mut self, repeat_count: FixedLinearExpr) {
+        self.repeat_count = repeat_count;
+    }
+
     pub fn reversed(&self) -> Self {
         Self {
             block: self.block.reversed(),
@@ -136,29 +144,33 @@ impl RepeatedSymbolsLinearBlock {
         let mut left_results = vec![];
         let mut right_results = vec![];
 
-        // 左側のブロックを追加
+        // 左のリピートブロック
         if left_cut_block_num > FixedLinearExpr::from_i64(0) {
-            left_results.push(Block::RepeatedSymbolsLinear(Self {
-                block: self.block.clone(),
-                repeat_count: left_cut_block_num,
-            }));
+            let mut left_block = self.clone();
+            left_block.set_repeat_count(left_cut_block_num);
+            left_block.block.symbols.rotate_left(rem_in_block as usize);
+            left_results = vec![Block::RepeatedSymbolsLinear(left_block)];
         }
 
-        // 中間のSymbolsBlockを追加
+        // 右のリピートブロック
+        if right_cut_block_num > FixedLinearExpr::from_i64(0) {
+            let mut right_block = self.clone();
+            right_block.set_repeat_count(right_cut_block_num);
+            right_block
+                .block
+                .symbols
+                .rotate_right((self.block.size() - rem_in_block) as usize);
+            right_results = vec![Block::RepeatedSymbolsLinear(right_block)];
+        }
+
+        // 外側のSymbolsBlockを追加
         if rem_in_block > 0 {
             assert!(rem_in_block < self.block.size());
             let [left, right] = self.block.split_at(rem_in_block).unwrap();
-            left_results.push(Block::Symbols(left));
+            left_results.insert(0, Block::Symbols(left));
             right_results.push(Block::Symbols(right));
         }
 
-        // 右側のブロックを追加
-        if right_cut_block_num > FixedLinearExpr::from_i64(0) {
-            right_results.push(Block::RepeatedSymbolsLinear(Self {
-                block: self.block.clone(),
-                repeat_count: right_cut_block_num,
-            }));
-        }
         Some([left_results, right_results])
     }
 }

@@ -14,7 +14,11 @@ use yan_busy_beaver::base::Symbol;
 use yan_busy_beaver::block::Block;
 use yan_busy_beaver::block::RepeatedSymbolsLinearBlock;
 use yan_busy_beaver::block::SymbolsBlock;
+use yan_busy_beaver::counter::CounterExpr;
 use yan_busy_beaver::counter::FixedLinearExpr;
+use yan_busy_beaver::interpreter::Context;
+use yan_busy_beaver::interpreter::process;
+use yan_busy_beaver::tape::Tape;
 use yan_busy_beaver::transition::RepeatedRulesLinearTransition;
 use yan_busy_beaver::transition::RulesTransition;
 use yan_busy_beaver::transition::Transition;
@@ -110,7 +114,28 @@ fn check_min_changed_sequences(
         },
     );
 
-    Some(())
+    let mut context = Context {
+        step: 0,
+        position: CounterExpr::Constant(0),
+    };
+
+    let mut tape = Tape::new(tape_blocks);
+    let mut tape_next = tape.clone();
+    for tape_block in tape_next.blocks_mut() {
+        if let Block::RepeatedSymbolsLinear(repeated_block) = tape_block {
+            repeated_block.set_repeat_count(repeated_block.repeat_count() + 1);
+        }
+    }
+    for transition in &transitions {
+        process(&mut context, &mut tape, transition)?;
+    }
+
+    // テープの繰り返しブロックを1回増やした状態で、同じか比較する
+    if Tape::compare(&tape, &tape_next) {
+        Some(())
+    } else {
+        None
+    }
 }
 
 fn main() {
