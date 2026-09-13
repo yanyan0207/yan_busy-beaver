@@ -31,6 +31,13 @@ impl Block {
         }
     }
 
+    pub fn as_repeated_symbols_linear(&self) -> Option<&RepeatedSymbolsLinearBlock> {
+        match self {
+            Block::RepeatedSymbolsLinear(b) => Some(b),
+            _ => None,
+        }
+    }
+
     pub fn split_at(&self, index: CounterExpr) -> Option<[Vec<Block>; 2]> {
         match self {
             Block::Symbols(b) => {

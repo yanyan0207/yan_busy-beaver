@@ -1,4 +1,4 @@
-use crate::base::Symbol;
+use crate::base::{State, Symbol};
 use crate::block::Block;
 use crate::block::{RepeatedSymbolsLinearBlock, SymbolsBlock};
 use crate::counter::CounterExpr;
@@ -13,21 +13,31 @@ pub struct BlockInfo {
     pub is_current: bool,
     pub current_index_in_block: Option<CounterExpr>,
 }
-pub struct Context {
+pub struct ExecutionContext {
+    pub state: State,
     pub step: i64,
     pub position: CounterExpr,
 }
 
-pub fn process(context: &mut Context, tape: &mut Tape, transition: &Transition) -> Option<()> {
-    process_with_debug(context, tape, transition, false)
+pub fn apply_transition(
+    context: &mut ExecutionContext,
+    tape: &mut Tape,
+    transition: &Transition,
+) -> Option<()> {
+    apply_transition_with_debug(context, tape, transition, false)
 }
 
-pub fn process_with_debug(
-    context: &mut Context,
+pub fn apply_transition_with_debug(
+    context: &mut ExecutionContext,
     tape: &mut Tape,
     transition: &Transition,
     debug: bool,
 ) -> Option<()> {
+    // ステートの確認
+    if context.state != transition.from_state() {
+        return None;
+    }
+
     // 入力テープの範囲を計算
     let mut io_range = transition.io_range() + context.position;
 
@@ -91,6 +101,7 @@ pub fn process_with_debug(
     tape.insert_blocks(block_index, transition.output_tape().blocks());
 
     // 情報の更新
+    context.state = transition.to_state();
     context.position += transition.to_position();
     context.step += 1;
 

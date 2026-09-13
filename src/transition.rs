@@ -2,6 +2,7 @@ use crate::{
     base::{Rule, State, Symbol},
     block::{Block, RepeatedSymbolsLinearBlock, SymbolsBlock},
     counter::{CounterExpr, FixedLinearExpr},
+    interpreter::{ExecutionContext, apply_transition},
     range::Range,
     tape::Tape,
 };
@@ -26,6 +27,20 @@ impl Transition {
         }
     }
 
+    pub fn from_state(&self) -> State {
+        match self {
+            Transition::Rules(t) => t.from_state(),
+            Transition::RepeatedRulesLinear(t) => t.from_state(),
+        }
+    }
+
+    pub fn to_state(&self) -> State {
+        match self {
+            Transition::Rules(t) => t.to_state(),
+            Transition::RepeatedRulesLinear(t) => t.to_state(),
+        }
+    }
+
     pub fn input_tape(&self) -> &Tape {
         match self {
             Transition::Rules(t) => &t.input_tape,
@@ -39,8 +54,16 @@ impl Transition {
             Transition::RepeatedRulesLinear(t) => &t.output_tape,
         }
     }
+
+    pub fn proof_self(&self) -> bool {
+        match self {
+            Transition::Rules(_) => true,
+            Transition::RepeatedRulesLinear(t) => t.proof_self(),
+        }
+    }
 }
 
+#[derive(Clone)]
 pub struct RulesTransition {
     pub rules: Vec<Rule>,
     pub io_range: Range,
@@ -104,6 +127,7 @@ impl RulesTransition {
     }
 }
 
+#[derive(Clone)]
 pub struct RepeatedRulesLinearTransition {
     pub rule_block: RulesTransition,
     pub io_range: Range,
@@ -111,6 +135,7 @@ pub struct RepeatedRulesLinearTransition {
     pub repeat_count: FixedLinearExpr,
     pub input_tape: Tape,
     pub output_tape: Tape,
+    is_simple_repeat: bool,
 }
 
 impl RepeatedRulesLinearTransition {
@@ -138,7 +163,8 @@ impl RepeatedRulesLinearTransition {
             let block_size = rule_block.to_position;
 
             // 重なりの無いリピートの場合
-            let (input_tape, output_tape) = if rule_io_range.start == CounterExpr::Constant(0)
+            let (input_tape, output_tape, is_simple_repeat) = if rule_io_range.start
+                == CounterExpr::Constant(0)
                 && rule_io_range.end == CounterExpr::Constant(rule_block.to_position) - 1
             {
                 let repeat_input_block =
@@ -148,7 +174,7 @@ impl RepeatedRulesLinearTransition {
                     RepeatedSymbolsLinearBlock::new(rule_output_block, repeat_count);
                 let output_tape =
                     Tape::new(vec![Block::RepeatedSymbolsLinear(repeat_output_block)]);
-                (input_tape, output_tape)
+                (input_tape, output_tape, true)
             }
             // 重なりのあるリピートの場合の処理
             else {
@@ -176,7 +202,7 @@ impl RepeatedRulesLinearTransition {
                     Block::Symbols(rule_output_block.clone()),
                 ];
                 let output_tape = Tape::new(output_blocks);
-                (input_tape, output_tape)
+                (input_tape, output_tape, false)
             };
             Self {
                 rule_block,
@@ -185,12 +211,67 @@ impl RepeatedRulesLinearTransition {
                 to_position,
                 input_tape,
                 output_tape,
+                is_simple_repeat,
             }
         } else {
             let rules = rules.iter().map(|r| r.reversed()).collect::<Vec<_>>();
             let ret = Self::new(&rules, repeat_count);
             ret.reversed()
         }
+    }
+
+    pub fn from_state(&self) -> State {
+        self.rule_block.from_state()
+    }
+
+    pub fn to_state(&self) -> State {
+        self.rule_block.to_state()
+    }
+
+    pub fn proof_self(&self) -> bool {
+        // 本来は3未満でも処理できるが、ここでは3以上であることを前提としている
+        assert!(self.repeat_count >= FixedLinearExpr::from_i64(3));
+        if self.repeat_count < FixedLinearExpr::from_i64(3) {
+            return true;
+        }
+
+        // ステートが同じかどうか確認
+        if self.rule_block.from_state() != self.rule_block.to_state() {
+            return false;
+        }
+
+        // 単純なリピートなら証明不要
+        if self.is_simple_repeat {
+            return true;
+        }
+
+        // 左向きなら逆向きにして証明
+        if self.to_position < FixedLinearExpr::from_i64(0) {
+            let reversed = self.reversed();
+            return reversed.proof_self();
+        }
+
+        let mut tape = self.input_tape.clone();
+        let mut context = ExecutionContext {
+            step: 0,
+            state: self.from_state(),
+            position: self.io_range.start * -1,
+        };
+
+        // Ruleトランザクションを2回実行出来て、カウンターが2減ってること
+        // Note: 実処理で既に実際二回実行してるのでここでの確認は不要にできる
+        let expected_repeat_count = self.repeat_count - FixedLinearExpr::from_i64(2);
+        let t = Transition::Rules(self.rule_block.clone());
+        apply_transition(&mut context, &mut tape, &t);
+        apply_transition(&mut context, &mut tape, &t);
+
+        tape.blocks()
+            .last()
+            .unwrap()
+            .as_repeated_symbols_linear()
+            .unwrap()
+            .repeat_count()
+            == expected_repeat_count
     }
 
     pub fn reversed(&self) -> Self {
@@ -201,6 +282,7 @@ impl RepeatedRulesLinearTransition {
             to_position: self.to_position * -1,
             input_tape: self.input_tape.reversed(),
             output_tape: self.output_tape.reversed(),
+            is_simple_repeat: self.is_simple_repeat,
         }
     }
 }

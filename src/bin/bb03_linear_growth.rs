@@ -13,8 +13,8 @@ use yan_busy_beaver::cli::run_csv_stage;
 use yan_busy_beaver::counter::CounterExpr;
 use yan_busy_beaver::counter::FixedLinearExpr;
 use yan_busy_beaver::debug_println;
-use yan_busy_beaver::interpreter::Context;
-use yan_busy_beaver::interpreter::process_with_debug;
+use yan_busy_beaver::interpreter::ExecutionContext;
+use yan_busy_beaver::interpreter::apply_transition_with_debug;
 use yan_busy_beaver::machine::RawExecutionRecord;
 use yan_busy_beaver::machine::format_record_tape;
 use yan_busy_beaver::machine::format_rule;
@@ -210,6 +210,14 @@ fn check_min_changed_sequences(
         print_execution_cycles(min_changed_sequences, execution_records, &transitions);
     }
 
+    // Check if all transitions are proofed
+    for transition in &transitions {
+        if !transition.proof_self() {
+            debug_println!(debug, "=> transition failed proof: unresolved");
+            return None;
+        }
+    }
+
     // 各minポジション変化点の間の繰り返しテープブロックを探索
     debug_println!(
         debug,
@@ -241,8 +249,9 @@ fn check_min_changed_sequences(
         },
     );
 
-    let mut context = Context {
+    let mut context = ExecutionContext {
         step: 0,
+        state: rules_list[0][0].current_state,
         position: CounterExpr::Constant(0),
     };
 
@@ -281,7 +290,7 @@ fn check_min_changed_sequences(
             io_range.start,
             io_range.end
         );
-        let result = process_with_debug(&mut context, &mut tape, transition, debug);
+        let result = apply_transition_with_debug(&mut context, &mut tape, transition, debug);
         if result.is_none() {
             debug_println!(
                 debug,
