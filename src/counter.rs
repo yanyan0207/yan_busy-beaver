@@ -251,8 +251,8 @@ impl Div<i64> for FixedLinearExpr {
 
     fn div(self, rhs: i64) -> Self {
         FixedLinearExpr {
-            coefficient: self.coefficient / rhs,
-            constant: self.constant / rhs,
+            coefficient: self.coefficient.div_euclid(rhs),
+            constant: self.constant.div_euclid(rhs),
         }
     }
 }
@@ -262,8 +262,8 @@ impl Rem<i64> for FixedLinearExpr {
 
     fn rem(self, rhs: i64) -> Self {
         FixedLinearExpr {
-            coefficient: self.coefficient % rhs,
-            constant: self.constant % rhs,
+            coefficient: self.coefficient.rem_euclid(rhs),
+            constant: self.constant.rem_euclid(rhs),
         }
     }
 }
