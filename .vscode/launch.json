@@ -1,0 +1,33 @@
+﻿{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug lg_03",
+            "cargo": {
+                "args": ["build", "--bin", "bb03_linear_growth"],
+                "filter": {
+                    "name": "bb03_linear_growth",
+                    "kind": "bin"
+                }
+            },
+            "args": ["0RB 0LA 0LC 1RA 1LA 0RH"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug lg_04",
+            "cargo": {
+                "args": ["build", "--bin", "bb03_linear_growth"],
+                "filter": {
+                    "name": "bb03_linear_growth",
+                    "kind": "bin"
+                }
+            },
+            "args": ["0RB 0RH 0LC 1RA 0LD 0RH 1LA 1LC"],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

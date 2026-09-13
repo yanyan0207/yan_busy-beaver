@@ -45,6 +45,7 @@ impl Tape {
     pub fn compare(lhs: &Tape, rhs: &Tape) -> bool {
         // サイズを調べる
         if lhs.size() != rhs.size() {
+            println!("    {lhs}\n    {rhs}\n");
             return false;
         }
 
@@ -53,6 +54,7 @@ impl Tape {
 
         // ブロックを比較する
         loop {
+            println!("    {lhs}\n    {rhs}\n");
             if lhs.blocks().is_empty() && rhs.blocks().is_empty() {
                 return true;
             } else if lhs.blocks().is_empty() || rhs.blocks().is_empty() {
@@ -157,5 +159,51 @@ impl Tape {
 
         // 指定範囲を返す
         self.blocks[start_block_index as usize..=end_block_index as usize].to_vec()
+    }
+}
+
+impl std::fmt::Display for Tape {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.blocks.is_empty() {
+            return write!(f, "(empty)");
+        }
+        for (i, block) in self.blocks.iter().enumerate() {
+            if i > 0 { write!(f, " | ")?; }
+            write!(f, "{block}")?;
+        }
+        Ok(())
+    }
+}
+
+impl Tape {
+    /// Show the head without expanding or splitting symbolic repeat blocks.
+    pub fn debug_with_position(&self, position: CounterExpr) -> String {
+        let mut text = String::new();
+        let mut start = CounterExpr::Constant(0);
+        let mut marker = None;
+        for (i, block) in self.blocks.iter().enumerate() {
+            if i > 0 { text.push_str(" | "); }
+            let column = text.len();
+            let end = start + block.size();
+            if start <= position && position < end {
+                let offset = position - start;
+                let cell_column = block.as_symbols()
+                    .and_then(|_| offset.as_constant())
+                    .map(|offset| column + 1 + offset as usize)
+                    .unwrap_or(column);
+                marker = Some((cell_column, format!("pos:{position} (block:{}, offset:{offset})", i + 1)));
+            }
+            text.push_str(&block.to_string());
+            start = end;
+        }
+        if text.is_empty() { text.push_str("(empty)"); }
+        let (column, label) = marker.unwrap_or_else(|| {
+            if position < CounterExpr::Constant(0) {
+                (0, format!("pos:{position} (left blank, distance:{})", position * -1))
+            } else {
+                (text.len(), format!("pos:{position} (right blank, offset:{})", position - start))
+            }
+        });
+        format!("{text}\n          {}^ {label}", " ".repeat(column))
     }
 }

@@ -185,3 +185,23 @@ impl PartialEq for RepeatedSymbolsLinearBlock {
             == other.block.symbols.repeat(self.block.size() as usize)
     }
 }
+
+impl std::fmt::Display for SymbolsBlock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for symbol in &self.symbols {
+            write!(f, "{}", match symbol { Symbol::Zero => '0', Symbol::One => '1' })?;
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for Block {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Block::Symbols(block) => write!(f, "[{block}]"),
+            Block::RepeatedSymbolsLinear(block) => {
+                write!(f, "[{}]({})", block.block, block.repeat_count)
+            }
+        }
+    }
+}

@@ -44,6 +44,7 @@ pub fn process(context: &mut Context, tape: &mut Tape, transition: &Transition) 
         );
         io_range = io_range + CounterExpr::LinearFixed(remain);
         context.position += CounterExpr::LinearFixed(remain);
+        println!("  io_range {}..={} (after left extension)", io_range.start, io_range.end);
     }
 
     // テープから
@@ -52,7 +53,11 @@ pub fn process(context: &mut Context, tape: &mut Tape, transition: &Transition) 
     // ブロックが想定通りか比較
     let cutted_tape = Tape::new(blocks_in_range);
     let is_equal = Tape::compare(&cutted_tape, transition.input_tape());
+    println!("  input compare: {}", if is_equal { "MATCH" } else { "MISMATCH" });
     if !is_equal {
+        println!("  input mismatch at {}..={}", io_range.start, io_range.end);
+        println!("    actual   {}", cutted_tape);
+        println!("    expected {}", transition.input_tape());
         return None;
     }
 

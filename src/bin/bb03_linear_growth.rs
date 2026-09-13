@@ -11,6 +11,8 @@ use yan_busy_beaver::base::Rule;
 use yan_busy_beaver::base::RuleTable;
 use yan_busy_beaver::base::State;
 use yan_busy_beaver::base::Symbol;
+use yan_busy_beaver::base::dir_to_str;
+use yan_busy_beaver::base::symbol_to_str;
 use yan_busy_beaver::block::Block;
 use yan_busy_beaver::block::RepeatedSymbolsLinearBlock;
 use yan_busy_beaver::block::SymbolsBlock;
@@ -69,7 +71,7 @@ fn check_min_changed_sequences(
         .collect::<Vec<_>>();
     let datas_list = min_changed_sequences
         .iter()
-        .map(|i| execution_records[*i as usize].data.as_slice())
+        .map(|i| execution_records[*i as usize - 1].data.as_slice())
         .collect::<Vec<_>>();
 
     let repeated_execution_range = find_growing_repeat_block(&rules_list)?;
@@ -92,6 +94,8 @@ fn check_min_changed_sequences(
             }
         },
     );
+
+    print_execution_cycles(min_changed_sequences, execution_records, &transitions);
 
     // 各minポジション変化点の間の繰り返しテープブロックを探索
     let repeated_tape_range = find_growing_repeat_block(&datas_list)?;
@@ -126,15 +130,136 @@ fn check_min_changed_sequences(
             repeated_block.set_repeat_count(repeated_block.repeat_count() + 1);
         }
     }
-    for transition in &transitions {
-        process(&mut context, &mut tape, transition)?;
+    println!("\n{}", "=".repeat(80));
+    println!("TAPE BLOCKS   [symbols](repeat count), | = block boundary");
+    println!("position: {}", context.position);
+    println!("initial   {}", tape.debug_with_position(context.position));
+    println!("expected {}", tape_next);
+    for (i, transition) in transitions.iter().enumerate() {
+        println!("  --- transition {} ---", i + 1);
+        println!("  before  {}", tape.debug_with_position(context.position));
+        println!("  input   {}", transition.input_tape());
+        println!("  output  {}", transition.output_tape());
+        let io_range = transition.io_range() + context.position;
+        println!(
+            "  io_range {}..={} (tape coordinates, inclusive)",
+            io_range.start, io_range.end
+        );
+        let result = process(&mut context, &mut tape, transition);
+        if result.is_none() {
+            println!("  after   {}", tape.debug_with_position(context.position));
+            println!(
+                "final after (input mismatch)\n          {}",
+                tape.debug_with_position(context.position)
+            );
+            return None;
+        }
+        println!("  after   {}", tape.debug_with_position(context.position));
     }
+    println!(
+        "final after\n          {}",
+        tape.debug_with_position(context.position)
+    );
+    println!("expected {}", tape_next);
 
     // テープの繰り返しブロックを1回増やした状態で、同じか比較する
-    if Tape::compare(&tape, &tape_next) {
-        Some(())
-    } else {
-        None
+    let is_equal = Tape::compare(&tape, &tape_next);
+    println!(
+        "final compare: {}",
+        if is_equal { "MATCH" } else { "MISMATCH" }
+    );
+    if is_equal { Some(()) } else { None }
+}
+
+fn format_record_tape(record: &RawExecutionRecord, display_min: i64, display_max: i64) -> String {
+    let mut tape = format!(
+        "{:>4}<>{:<4} ... ",
+        record.min_position, record.max_position
+    );
+    for position in display_min..=display_max {
+        let c = if position < record.min_position || position > record.max_position {
+            " "
+        } else {
+            let symbol = record.data[(position - record.min_position) as usize];
+            symbol_to_str(symbol)
+        };
+        // Keep every absolute tape coordinate in a fixed-width column.
+        if position == 0 {
+            tape.push('|');
+        }
+        if position == record.position {
+            tape.push_str(&format!("*{c}"));
+        } else {
+            tape.push_str("{c}");
+        }
+    }
+    tape
+}
+
+fn print_execution_cycles(
+    boundaries: &[i64],
+    records: &[RawExecutionRecord],
+    transitions: &[Transition],
+) {
+    use yan_busy_beaver::base::state_to_str;
+
+    let Some(last_window) = boundaries.windows(2).take(3).next_back() else {
+        return;
+    };
+    let last_record = &records[last_window[1] as usize - 1];
+    let display_min = last_record.min_position;
+    let display_max = last_record.max_position;
+
+    println!("step is 1-based; [symbol] is the head; x is outside min/max");
+    println!("tape display range: {display_min}..={display_max}");
+    for (cycle, window) in boundaries.windows(2).take(3).enumerate() {
+        let mut cursor = window[0] as usize;
+        println!(
+            "\n  CYCLE {}   n={}   steps {}..={}",
+            cycle + 1,
+            cycle,
+            cursor + 1,
+            window[1]
+        );
+        println!("{}", "=".repeat(80));
+        for transition in transitions {
+            let (rule_count, repeats, repeated) = match transition {
+                Transition::Rules(t) => (t.rules.len(), 1, false),
+                Transition::RepeatedRulesLinear(t) => (
+                    t.rule_block.rules.len(),
+                    (t.repeat_count.coefficient * cycle as i64 + t.repeat_count.constant) as usize,
+                    true,
+                ),
+            };
+            if repeated {
+                println!("    <<<<<<<<<<<");
+            }
+            for repetition in 0..repeats {
+                for _ in 0..rule_count {
+                    let record = &records[cursor];
+                    println!(
+                        "s:{:3} {}{} {}{}{}{:2} {}",
+                        cursor + 1,
+                        state_to_str(record.rule.current_state),
+                        symbol_to_str(record.rule.read_symbol),
+                        symbol_to_str(record.rule.instruction.write_symbol),
+                        dir_to_str(record.rule.instruction.dir),
+                        state_to_str(record.rule.instruction.next_state),
+                        if repeated {
+                            repetition.to_string()
+                        } else {
+                            "  ".to_string()
+                        },
+                        format_record_tape(record, display_min, display_max),
+                    );
+                    cursor += 1;
+                }
+            }
+            if repeated {
+                println!("    >>>>>>>>>>>");
+            }
+        }
+        debug_assert_eq!(cursor, window[1] as usize);
     }
 }
 
@@ -322,7 +447,6 @@ where
         .flatten()
         .collect::<Vec<T>>();
 
-        println!("Original: {:?}, Created: {:?}", sequences[i], created);
         if *seq != created {
             return None;
         }

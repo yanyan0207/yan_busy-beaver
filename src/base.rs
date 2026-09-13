@@ -33,6 +33,20 @@ pub fn state_to_str(state: State) -> &'static str {
         _ => panic!("Invalid state"),
     }
 }
+
+pub fn dir_to_str(dir: Direction) -> &'static str {
+    match dir {
+        Direction::Left => "L",
+        Direction::Right => "R",
+    }
+}
+
+pub fn symbol_to_str(symbol: Symbol) -> &'static str {
+    match symbol {
+        Symbol::Zero => "0",
+        Symbol::One => "1",
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Instruction {
     pub write_symbol: Symbol,

@@ -297,3 +297,26 @@ impl std::hash::Hash for CounterExpr {
         std::hash::Hash::hash(&self.as_linear_fixed(), state);
     }
 }
+
+impl std::fmt::Display for FixedLinearExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.coefficient == 0 {
+            return write!(f, "{}", self.constant);
+        }
+        match self.coefficient {
+            1 => write!(f, "n")?,
+            -1 => write!(f, "-n")?,
+            value => write!(f, "{value}n")?,
+        }
+        if self.constant != 0 {
+            write!(f, "{:+}", self.constant)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for CounterExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_linear_fixed())
+    }
+}
