@@ -19,7 +19,8 @@ use yan_busy_beaver::block::SymbolsBlock;
 use yan_busy_beaver::counter::CounterExpr;
 use yan_busy_beaver::counter::FixedLinearExpr;
 use yan_busy_beaver::interpreter::Context;
-use yan_busy_beaver::interpreter::process;
+use yan_busy_beaver::interpreter::process_with_debug;
+use yan_busy_beaver::debug_println;
 use yan_busy_beaver::tape::Tape;
 use yan_busy_beaver::transition::RepeatedRulesLinearTransition;
 use yan_busy_beaver::transition::RulesTransition;
@@ -40,9 +41,12 @@ struct Args {
     /// Maximum steps (default: 100 for a pattern, 1000 for CSV search).
     #[clap(long, default_value_t = 100)]
     max_steps: usize,
+    /// Show execution, tape block, and comparison diagnostics.
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    debug: bool,
 }
 
-fn check(pattern: &str, max_steps: usize) -> Option<()> {
+fn check(pattern: &str, max_steps: usize, debug: bool) -> Option<()> {
     // 実行履歴の取得
     let execution_records = get_execution_records(pattern, max_steps);
 
@@ -51,7 +55,7 @@ fn check(pattern: &str, max_steps: usize) -> Option<()> {
 
     // 各minポジション変化点のシーケンスに対して繰り返しブロックを探索
     for min_changed_seq in min_changed_sequences {
-        check_min_changed_sequences(&min_changed_seq, &execution_records);
+        check_min_changed_sequences(&min_changed_seq, &execution_records, debug);
     }
     Some(())
 }
@@ -59,6 +63,7 @@ fn check(pattern: &str, max_steps: usize) -> Option<()> {
 fn check_min_changed_sequences(
     min_changed_sequences: &[i64],
     execution_records: &[RawExecutionRecord],
+    debug: bool,
 ) -> Option<()> {
     // 各minポジション変化点の間の実行履歴ブロックを取得
     let rules_all = execution_records
@@ -95,7 +100,7 @@ fn check_min_changed_sequences(
         },
     );
 
-    print_execution_cycles(min_changed_sequences, execution_records, &transitions);
+    if debug { print_execution_cycles(min_changed_sequences, execution_records, &transitions); }
 
     // 各minポジション変化点の間の繰り返しテープブロックを探索
     let repeated_tape_range = find_growing_repeat_block(&datas_list)?;
@@ -130,41 +135,41 @@ fn check_min_changed_sequences(
             repeated_block.set_repeat_count(repeated_block.repeat_count() + 1);
         }
     }
-    println!("\n{}", "=".repeat(80));
-    println!("TAPE BLOCKS   [symbols](repeat count), | = block boundary");
-    println!("position: {}", context.position);
-    println!("initial   {}", tape.debug_with_position(context.position));
-    println!("expected {}", tape_next);
+    debug_println!(debug, "\n{}", "=".repeat(80));
+    debug_println!(debug, "TAPE BLOCKS   [symbols](repeat count), | = block boundary");
+    debug_println!(debug, "position: {}", context.position);
+    debug_println!(debug, "initial   {}", tape.debug_with_position(context.position));
+    debug_println!(debug, "expected {}", tape_next);
     for (i, transition) in transitions.iter().enumerate() {
-        println!("  --- transition {} ---", i + 1);
-        println!("  before  {}", tape.debug_with_position(context.position));
-        println!("  input   {}", transition.input_tape());
-        println!("  output  {}", transition.output_tape());
+        debug_println!(debug, "  --- transition {} ---", i + 1);
+        debug_println!(debug, "  before  {}", tape.debug_with_position(context.position));
+        debug_println!(debug, "  input   {}", transition.input_tape());
+        debug_println!(debug, "  output  {}", transition.output_tape());
         let io_range = transition.io_range() + context.position;
-        println!(
+        debug_println!(debug, 
             "  io_range {}..={} (tape coordinates, inclusive)",
             io_range.start, io_range.end
         );
-        let result = process(&mut context, &mut tape, transition);
+        let result = process_with_debug(&mut context, &mut tape, transition, debug);
         if result.is_none() {
-            println!("  after   {}", tape.debug_with_position(context.position));
-            println!(
+            debug_println!(debug, "  after   {}", tape.debug_with_position(context.position));
+            debug_println!(debug, 
                 "final after (input mismatch)\n          {}",
                 tape.debug_with_position(context.position)
             );
             return None;
         }
-        println!("  after   {}", tape.debug_with_position(context.position));
+        debug_println!(debug, "  after   {}", tape.debug_with_position(context.position));
     }
-    println!(
+    debug_println!(debug, 
         "final after\n          {}",
         tape.debug_with_position(context.position)
     );
-    println!("expected {}", tape_next);
+    debug_println!(debug, "expected {}", tape_next);
 
     // テープの繰り返しブロックを1回増やした状態で、同じか比較する
-    let is_equal = Tape::compare(&tape, &tape_next);
-    println!(
+    let is_equal = Tape::compare_with_debug(&tape, &tape_next, debug);
+    debug_println!(debug, 
         "final compare: {}",
         if is_equal { "MATCH" } else { "MISMATCH" }
     );
@@ -266,10 +271,10 @@ fn print_execution_cycles(
 fn main() {
     let args = Args::parse();
 
-    println!("pattern {} max_steps {}", args.pattern, args.max_steps);
+    debug_println!(args.debug, "pattern {} max_steps {}", args.pattern, args.max_steps);
 
     // パターンに対してminポジション変化点の繰り返しブロックをチェック
-    check(&args.pattern, args.max_steps);
+    check(&args.pattern, args.max_steps, args.debug);
 }
 
 // 指定されたパターンに対して実行履歴を取得する関数

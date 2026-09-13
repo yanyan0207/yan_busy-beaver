@@ -43,9 +43,13 @@ impl Tape {
     }
 
     pub fn compare(lhs: &Tape, rhs: &Tape) -> bool {
+        Self::compare_with_debug(lhs, rhs, false)
+    }
+
+    pub fn compare_with_debug(lhs: &Tape, rhs: &Tape, debug: bool) -> bool {
         // サイズを調べる
         if lhs.size() != rhs.size() {
-            println!("    {lhs}\n    {rhs}\n");
+            if debug { println!("    {lhs}\n    {rhs}\n"); }
             return false;
         }
 
@@ -54,7 +58,7 @@ impl Tape {
 
         // ブロックを比較する
         loop {
-            println!("    {lhs}\n    {rhs}\n");
+            if debug { println!("    {lhs}\n    {rhs}\n"); }
             if lhs.blocks().is_empty() && rhs.blocks().is_empty() {
                 return true;
             } else if lhs.blocks().is_empty() || rhs.blocks().is_empty() {
