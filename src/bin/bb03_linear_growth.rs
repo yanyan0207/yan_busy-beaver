@@ -1,40 +1,30 @@
-use std::ops::Range;
-
 use clap::Parser;
 use itertools::Itertools;
-use std::fmt::Debug;
 use yan_busy_beaver::algorithm::arithmetic_difference::find_sequence_with_arithmetic_differences;
 use yan_busy_beaver::algorithm::arithmetic_difference::get_diff_for_sequence_with_arithmetic_differences;
 use yan_busy_beaver::algorithm::arithmetic_difference::next_for_sequence_with_arithmetic_differences;
-use yan_busy_beaver::base::HALT_STATE;
+use yan_busy_beaver::algorithm::repeat_block::collect_blocks_with_repeated_range;
+use yan_busy_beaver::algorithm::repeat_block::find_growing_repeat_block;
 use yan_busy_beaver::base::Rule;
-use yan_busy_beaver::base::RuleTable;
-use yan_busy_beaver::base::State;
-use yan_busy_beaver::base::Symbol;
-use yan_busy_beaver::base::dir_to_str;
-use yan_busy_beaver::base::symbol_to_str;
 use yan_busy_beaver::block::Block;
 use yan_busy_beaver::block::RepeatedSymbolsLinearBlock;
 use yan_busy_beaver::block::SymbolsBlock;
+use yan_busy_beaver::cli::run_csv_stage;
 use yan_busy_beaver::counter::CounterExpr;
 use yan_busy_beaver::counter::FixedLinearExpr;
 use yan_busy_beaver::debug_println;
 use yan_busy_beaver::interpreter::Context;
 use yan_busy_beaver::interpreter::process_with_debug;
+use yan_busy_beaver::machine::RawExecutionRecord;
+use yan_busy_beaver::machine::format_record_tape;
+use yan_busy_beaver::machine::format_rule;
+use yan_busy_beaver::machine::get_execution_records;
+use yan_busy_beaver::machine::print_execution_records;
+use yan_busy_beaver::machine::reverse_pattern;
 use yan_busy_beaver::tape::Tape;
 use yan_busy_beaver::transition::RepeatedRulesLinearTransition;
 use yan_busy_beaver::transition::RulesTransition;
 use yan_busy_beaver::transition::Transition;
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct RawExecutionRecord {
-    step: i64,
-    rule: Rule,
-    position: i64,
-    max_position: i64,
-    min_position: i64,
-    data: Vec<Symbol>,
-}
-
 #[derive(Parser)]
 struct Args {
     #[arg(required_unless_present = "csv", conflicts_with = "csv")]
@@ -60,17 +50,6 @@ enum ReverseMode {
     Auto,
     Off,
     Only,
-}
-
-fn reverse_pattern(pattern: &str) -> String {
-    pattern
-        .chars()
-        .map(|c| match c {
-            'L' => 'R',
-            'R' => 'L',
-            c => c,
-        })
-        .collect()
 }
 
 /// Run `check` on the pattern and/or its L/R mirror according to `mode`.
@@ -142,52 +121,9 @@ MIN-CHANGED SEQUENCE {} steps(1-based) {:?}",
     None
 }
 
-/// Print every executed step in the same layout as `print_execution_cycles`,
-/// marking the steps where min_position moved.
-fn print_execution_records(records: &[RawExecutionRecord]) {
-    use yan_busy_beaver::base::state_to_str;
-
-    let Some(last_record) = records.last() else {
-        return;
-    };
-    let display_min = last_record.min_position;
-    let display_max = last_record.max_position;
-
-    println!(
-        "
-{}",
-        "=".repeat(80)
-    );
-    println!("EXECUTION   step is 1-based; *symbol is the head; ---- marks a min_position change");
-    println!("tape display range: {display_min}..={display_max}");
-    for (index, record) in records.iter().enumerate() {
-        let min_changed = index > 0 && records[index - 1].min_position != record.min_position;
-        if min_changed {
-            println!(
-                "{} min {} -> {}",
-                "-".repeat(60),
-                records[index - 1].min_position,
-                record.min_position
-            );
-        }
-        println!(
-            "s:{:3} {}{} {}{}{}    {}",
-            index + 1,
-            state_to_str(record.rule.current_state),
-            symbol_to_str(record.rule.read_symbol),
-            symbol_to_str(record.rule.instruction.write_symbol),
-            dir_to_str(record.rule.instruction.dir),
-            state_to_str(record.rule.instruction.next_state),
-            format_record_tape(record, display_min, display_max),
-        );
-    }
-}
-
 /// Print where min_position moved, grouped by rule, and which groups formed an
 /// arithmetic sequence that survives until max_steps.
 fn print_min_changed_sequences(records: &[RawExecutionRecord]) {
-    use yan_busy_beaver::base::state_to_str;
-
     println!(
         "
 {}",
@@ -211,12 +147,8 @@ fn print_min_changed_sequences(records: &[RawExecutionRecord]) {
         let diffs = steps.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
         let diffs2 = diffs.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
         println!(
-            "  {}{} {}{}{}  steps {:?}  diffs {:?}  diffs2 {:?}",
-            state_to_str(rule.current_state),
-            symbol_to_str(rule.read_symbol),
-            symbol_to_str(rule.instruction.write_symbol),
-            dir_to_str(rule.instruction.dir),
-            state_to_str(rule.instruction.next_state),
+            "  {}  steps {:?}  diffs {:?}  diffs2 {:?}",
+            format_rule(rule),
             steps,
             diffs,
             diffs2
@@ -386,38 +318,11 @@ fn check_min_changed_sequences(
     if is_equal { Some(()) } else { None }
 }
 
-fn format_record_tape(record: &RawExecutionRecord, display_min: i64, display_max: i64) -> String {
-    let mut tape = format!(
-        "{:>4}<>{:<4} ... ",
-        record.min_position, record.max_position
-    );
-    for position in display_min..=display_max {
-        let c = if position < record.min_position || position > record.max_position {
-            " "
-        } else {
-            let symbol = record.data[(position - record.min_position) as usize];
-            symbol_to_str(symbol)
-        };
-        // Keep every absolute tape coordinate in a fixed-width column.
-        if position == 0 {
-            tape.push('|');
-        }
-        if position == record.position {
-            tape.push_str(&format!("*{c}"));
-        } else {
-            tape.push_str(&format!(" {c}"));
-        }
-    }
-    tape
-}
-
 fn print_execution_cycles(
     boundaries: &[i64],
     records: &[RawExecutionRecord],
     transitions: &[Transition],
 ) {
-    use yan_busy_beaver::base::state_to_str;
-
     let Some(last_window) = boundaries.windows(2).take(3).next_back() else {
         return;
     };
@@ -453,13 +358,9 @@ fn print_execution_cycles(
                 for _ in 0..rule_count {
                     let record = &records[cursor];
                     println!(
-                        "s:{:3} {}{} {}{}{}{:2} {}",
+                        "s:{:3} {}{:2} {}",
                         cursor + 1,
-                        state_to_str(record.rule.current_state),
-                        symbol_to_str(record.rule.read_symbol),
-                        symbol_to_str(record.rule.instruction.write_symbol),
-                        dir_to_str(record.rule.instruction.dir),
-                        state_to_str(record.rule.instruction.next_state),
+                        format_rule(&record.rule),
                         if repeated {
                             repetition.to_string()
                         } else {
@@ -478,109 +379,19 @@ fn print_execution_cycles(
     }
 }
 
-fn print_csv_progress(completed: usize, total: usize, counts: [usize; 2]) -> std::io::Result<()> {
-    use std::io::Write;
-    let filled = if total == 0 {
-        30
-    } else {
-        ((completed as u128 * 30) / total as u128) as usize
-    };
-    let mut stderr = std::io::stderr().lock();
-    write!(
-        stderr,
-        "\r[{}{}] {}/{} (d:{} u:{})",
-        "=".repeat(filled),
-        " ".repeat(30 - filled),
-        completed,
-        total,
-        counts[0],
-        counts[1]
-    )?;
-    stderr.flush()
-}
-
 fn check_csv(
     input: &std::path::Path,
     output: &std::path::Path,
     max_steps: usize,
     debug: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut reader = csv::Reader::from_path(input)?;
-    let column = reader
-        .headers()?
-        .iter()
-        .position(|h| h == "pattern")
-        .ok_or("Missing pattern column")?;
-    let records_start = reader.position().clone();
-    let total = reader
-        .records()
-        .try_fold(0usize, |count, row| row.map(|_| count + 1))?;
-    reader.seek(records_start)?;
-    std::fs::create_dir_all(output)?;
-    let input_path = input.canonicalize()?;
-    for name in ["decided.csv", "unresolved.csv"] {
-        let destination = output.join(name);
-        if destination.exists() && destination.canonicalize()? == input_path {
-            return Err("Output CSV would overwrite the input".into());
-        }
-    }
-    eprintln!("CSV input:      {}", input.display());
-    eprintln!("CSV decided:    {}", output.join("decided.csv").display());
-    eprintln!(
-        "CSV unresolved: {}",
-        output.join("unresolved.csv").display()
-    );
-    let mut decided = csv::Writer::from_path(output.join("decided.csv"))?;
-    let mut unresolved = csv::Writer::from_path(output.join("unresolved.csv"))?;
-    for writer in [&mut decided, &mut unresolved] {
-        writer.write_record(["pattern", "result", "max_steps"])?;
-    }
-    let mut counts = [0usize; 2];
-    print_csv_progress(0, total, counts)?;
-    for (index, row) in reader.records().enumerate() {
-        let row = row?;
-        let pattern = row
-            .get(column)
-            .filter(|s| !s.trim().is_empty())
-            .ok_or("Empty pattern")?;
-        // Preserve unexpected failures instead of recording them as unresolved.
-        let result = std::panic::catch_unwind(|| {
-            check_with_reverse(pattern, max_steps, debug, ReverseMode::Auto)
-        });
-        let matched = match result {
-            Ok(value) => value,
-            Err(payload) => {
-                decided.flush()?;
-                unresolved.flush()?;
-                eprintln!("CSV record {} failed: {}", index + 1, pattern);
-                std::panic::resume_unwind(payload);
-            }
-        };
-        let limit = max_steps.to_string();
-        if matched {
-            decided.write_record([pattern, "loop_candidate_detected", &limit])?;
-            counts[0] += 1;
-        } else {
-            unresolved.write_record([pattern, "unresolved", &limit])?;
-            counts[1] += 1;
-        }
-        print_csv_progress(index + 1, total, counts)?;
-    }
-    eprintln!();
-    decided.flush()?;
-    unresolved.flush()?;
-    eprintln!(
-        "CSV summary:    decided={} unresolved={} (total {})",
-        counts[0], counts[1], total
-    );
-    println!(
-        "{}: decided={} unresolved={} -> {}",
-        input.display(),
-        counts[0],
-        counts[1],
-        output.display()
-    );
-    Ok(())
+    run_csv_stage(
+        input,
+        output,
+        max_steps,
+        "loop_candidate_detected",
+        |pattern| check_with_reverse(pattern, max_steps, debug, ReverseMode::Auto),
+    )
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -630,54 +441,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// 指定されたパターンに対して実行履歴を取得する関数
-fn get_execution_records(pattern: &str, max_steps: usize) -> Vec<RawExecutionRecord> {
-    let mut tape = vec![Symbol::Zero; 2 * max_steps + 1];
-
-    let rule_table = RuleTable::from_pattern(pattern.to_string());
-
-    let mut current_state: State = 0;
-
-    let offset = max_steps as i64;
-
-    let mut history = vec![];
-    let mut current_position = 0_i64;
-    let mut max_position = 0_i64;
-    let mut min_position = 0_i64;
-
-    let mut current_symbol = tape[offset as usize];
-
-    for step in 0..max_steps as i64 {
-        let rule = rule_table.get_rule(current_state, current_symbol);
-
-        let inst = rule.instruction;
-        tape[(current_position + offset) as usize] = inst.write_symbol;
-        current_state = inst.next_state;
-        current_position += inst.dir.delta();
-        current_symbol = tape[(current_position + offset) as usize];
-
-        if current_position > max_position {
-            max_position = current_position;
-        }
-        if current_position < min_position {
-            min_position = current_position;
-        }
-        history.push(RawExecutionRecord {
-            step,
-            rule: *rule,
-            max_position,
-            min_position,
-            position: current_position,
-            data: tape[(min_position + offset) as usize..=(max_position + offset) as usize]
-                .to_vec(),
-        });
-
-        assert!(current_state != HALT_STATE);
-    }
-    history
-}
-
 // 指定された実行履歴に対して、minポジションが変化したステップの等差数列を見つける関数
+/// min変化点のステップ列に要求する階差の次数。
+/// 2 = 「min変化点の間隔(1階差)が等差数列」= 1サイクルのステップ数が線形に増える。
+const DIFFERENCE_ORDER: usize = 2;
+
+/// 階差数列の判定に必要な最小要素数(`find_sequence_with_arithmetic_differences`の仕様)。
+const MIN_SEQUENCE_LEN: usize = DIFFERENCE_ORDER + 3;
+
 fn find_min_changed_sequences_by_rule(
     execution_records: &[RawExecutionRecord],
     max_steps: usize,
@@ -699,7 +470,7 @@ fn find_min_changed_sequences_by_rule(
                 .iter()
                 .copied()
                 .collect::<std::collections::HashSet<i64>>(),
-            2,
+            DIFFERENCE_ORDER,
         );
         min_changed_sequences.extend(sequences);
     }
@@ -709,13 +480,16 @@ fn find_min_changed_sequences_by_rule(
         println!("MIN-CHANGED SEQUENCE CANDIDATES (steps 1-based)");
         if min_changed_sequences.is_empty() {
             println!(
-                "  (no sequence with 2nd-order arithmetic differences; needs at least 5 min-changed steps per rule)"
+                "  (no sequence with {DIFFERENCE_ORDER}-order arithmetic differences; needs at least {MIN_SEQUENCE_LEN} min-changed steps per rule)"
             );
         }
     }
     min_changed_sequences.retain(|seq| {
-        let diff2 = get_diff_for_sequence_with_arithmetic_differences(seq, 2);
-        let next = next_for_sequence_with_arithmetic_differences(seq, 2);
+        // DIFFERENCE_ORDER階の階差が全て同じ値ならその値、そうでなければNone
+        let diff2 = get_diff_for_sequence_with_arithmetic_differences(seq, DIFFERENCE_ORDER);
+        // 階差数列を1つ外挿して、次にminが変化するはずのステップ(0-based)を予測
+        let next = next_for_sequence_with_arithmetic_differences(seq, DIFFERENCE_ORDER);
+        // 階差が正(サイクルが伸び続ける)かつ、次の変化がmax_stepsより先(実行範囲内に反例がない)なら残す
         let keep = diff2.is_some_and(|d| d > 0) && next > max_steps as i64;
         if debug {
             let diffs1 = seq.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
@@ -723,7 +497,7 @@ fn find_min_changed_sequences_by_rule(
             let verdict = if keep {
                 "kept".to_string()
             } else if !diff2.is_some_and(|d| d > 0) {
-                format!("rejected: 2nd-order diff {:?} is not positive", diff2)
+                format!("rejected: {DIFFERENCE_ORDER}-order diff {diff2:?} is not positive")
             } else {
                 format!(
                     "rejected: next change {} <= max_steps {}",
@@ -732,9 +506,7 @@ fn find_min_changed_sequences_by_rule(
                 )
             };
             println!(
-                "  steps {:?}
-    diffs {:?}
-    diffs2 {:?}  next {}  => {}",
+                "  steps {:?}\n    diffs {:?}\n    diffs2 {:?}  next {}  => {}",
                 seq.iter().map(|s| s + 1).collect::<Vec<_>>(),
                 diffs1,
                 diffs2,
@@ -749,127 +521,4 @@ fn find_min_changed_sequences_by_rule(
         return None;
     }
     Some(min_changed_sequences)
-}
-
-// 3つのシーケンスに対して、成長する繰り返しブロックを見つける関数
-fn find_growing_repeat_block<T>(sequences: &[&[T]]) -> Option<Vec<Range<usize>>>
-where
-    T: PartialEq + Copy + Debug,
-{
-    if sequences.len() < 3 {
-        return None;
-    }
-    let previous_seq = sequences[0];
-    let current_seq = sequences[1];
-    let next_seq = sequences[2];
-
-    if next_seq.len() <= current_seq.len() || current_seq.len() <= previous_seq.len() {
-        return None;
-    }
-
-    if next_seq.len() - current_seq.len() != current_seq.len() - previous_seq.len() {
-        return None;
-    }
-
-    if previous_seq.is_empty() {
-        return None;
-    }
-
-    if previous_seq.is_empty() || current_seq.is_empty() || next_seq.is_empty() {
-        return None;
-    }
-
-    let mut repeat_block_ranges = vec![];
-    let mut previous_seq = previous_seq;
-    let mut current_seq = current_seq;
-    let mut next_seq = next_seq;
-    let mut offset = 0;
-    loop {
-        let first_diff_position = previous_seq
-            .iter()
-            .zip(current_seq)
-            .position(|(a, b)| a != b)
-            .unwrap_or(previous_seq.len());
-        let second_diff_position = current_seq
-            .iter()
-            .zip(next_seq)
-            .position(|(a, b)| a != b)
-            .unwrap_or(current_seq.len());
-
-        if first_diff_position == 0 && second_diff_position == 0 {
-            return None;
-        }
-        if second_diff_position < first_diff_position {
-            return None;
-        }
-
-        let block_length = second_diff_position - first_diff_position;
-
-        if block_length > 0 {
-            if next_seq.len() < second_diff_position + block_length
-                || next_seq[second_diff_position..second_diff_position + block_length]
-                    != current_seq[first_diff_position..first_diff_position + block_length]
-            {
-                return None;
-            }
-            repeat_block_ranges.push(offset + first_diff_position..offset + second_diff_position);
-        }
-
-        offset += second_diff_position;
-        previous_seq = &previous_seq[first_diff_position..];
-        current_seq = &current_seq[second_diff_position..];
-        next_seq = &next_seq[second_diff_position + block_length..];
-        if previous_seq.is_empty() {
-            break;
-        }
-    }
-
-    if repeat_block_ranges.is_empty() {
-        return None;
-    }
-
-    for (i, seq) in sequences.iter().enumerate() {
-        let created = collect_blocks_with_repeated_range(
-            sequences[1],
-            &repeat_block_ranges,
-            |seq, is_repeated| seq.to_vec().repeat(if is_repeated { i } else { 1 }),
-        )
-        .into_iter()
-        .flatten()
-        .collect::<Vec<T>>();
-
-        if *seq != created {
-            return None;
-        }
-    }
-    Some(repeat_block_ranges)
-}
-
-fn collect_blocks_with_repeated_range<T, S, F>(
-    sequences: &[T],
-    repeated_ranges: &Vec<Range<usize>>,
-    from_t: F,
-) -> Vec<S>
-where
-    F: Fn(&[T], bool) -> S,
-{
-    let mut work = 0;
-    let mut ret = vec![];
-    for repeated_range in repeated_ranges {
-        // 静的トランジションをプッシュ
-        if repeated_range.start > work {
-            ret.push(from_t(&sequences[work..repeated_range.start], false));
-        }
-        // 繰り返しブロックをプッシュ
-        ret.push(from_t(
-            &sequences[repeated_range.start..repeated_range.end],
-            true,
-        ));
-        work = repeated_range.end;
-    }
-    // 残りの静的トランジションをプッシュ
-    if work < sequences.len() {
-        ret.push(from_t(&sequences[work..], false));
-    }
-    ret
 }
