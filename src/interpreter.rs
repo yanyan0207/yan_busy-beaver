@@ -1,5 +1,4 @@
 use crate::base::{State, Symbol};
-use crate::block::Block;
 use crate::block::{RepeatedSymbolsLinearBlock, SymbolsBlock};
 use crate::counter::CounterExpr;
 use crate::tape::Tape;
@@ -46,23 +45,25 @@ pub fn apply_transition_with_debug(
         let remain = (io_range.end - tape.size()).as_linear_fixed() + 1;
         tape.insert(
             tape.blocks().len() as i64,
-            &Block::RepeatedSymbolsLinear(RepeatedSymbolsLinearBlock::new(
+            &RepeatedSymbolsLinearBlock::new(
                 &SymbolsBlock::new(vec![Symbol::Zero; 1].as_slice()),
                 remain,
-            )),
+            )
+            .into(),
         );
     }
-    if io_range.start < CounterExpr::Constant(0) {
+    if io_range.start < 0.into() {
         let remain = (io_range.start * -1).as_linear_fixed();
         tape.insert(
             0,
-            &Block::RepeatedSymbolsLinear(RepeatedSymbolsLinearBlock::new(
+            &RepeatedSymbolsLinearBlock::new(
                 &SymbolsBlock::new(vec![Symbol::Zero; 1].as_slice()),
                 remain,
-            )),
+            )
+            .into(),
         );
-        io_range = io_range + CounterExpr::LinearFixed(remain);
-        context.position += CounterExpr::LinearFixed(remain);
+        io_range = io_range + CounterExpr::from(remain);
+        context.position += CounterExpr::from(remain);
         crate::debug_println!(
             debug,
             "  io_range {}..={} (after left extension)",
@@ -96,7 +97,7 @@ pub fn apply_transition_with_debug(
 
     // 想定通りなら入れ替え
     let (block_index, block_rem) = tape.find_block(io_range.start);
-    assert!(block_rem == CounterExpr::Constant(0));
+    assert!(block_rem == 0.into());
     tape.remove_blocks(block_index, cutted_tape.blocks().len() as i64);
     tape.insert_blocks(block_index, transition.output_tape().blocks());
 

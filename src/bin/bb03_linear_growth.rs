@@ -10,7 +10,6 @@ use yan_busy_beaver::block::Block;
 use yan_busy_beaver::block::RepeatedSymbolsLinearBlock;
 use yan_busy_beaver::block::SymbolsBlock;
 use yan_busy_beaver::cli::run_csv_stage;
-use yan_busy_beaver::counter::CounterExpr;
 use yan_busy_beaver::counter::FixedLinearExpr;
 use yan_busy_beaver::debug_println;
 use yan_busy_beaver::interpreter::ExecutionContext;
@@ -193,15 +192,16 @@ fn check_min_changed_sequences(
         &repeated_execution_range,
         |s, is_repeated| {
             if is_repeated {
-                Transition::RepeatedRulesLinear(RepeatedRulesLinearTransition::new(
+                RepeatedRulesLinearTransition::new(
                     s,
                     FixedLinearExpr {
                         coefficient: 1,
                         constant: 0,
                     },
-                ))
+                )
+                .into()
             } else {
-                Transition::Rules(RulesTransition::new(s))
+                RulesTransition::new(s).into()
             }
         },
     );
@@ -236,15 +236,16 @@ fn check_min_changed_sequences(
         &repeated_tape_range,
         |s, is_repeated| {
             if is_repeated {
-                Block::RepeatedSymbolsLinear(RepeatedSymbolsLinearBlock::new(
+                RepeatedSymbolsLinearBlock::new(
                     &SymbolsBlock::new(s),
                     FixedLinearExpr {
                         coefficient: 1,
                         constant: 0,
                     },
-                ))
+                )
+                .into()
             } else {
-                Block::Symbols(SymbolsBlock::new(s))
+                SymbolsBlock::new(s).into()
             }
         },
     );
@@ -252,7 +253,7 @@ fn check_min_changed_sequences(
     let mut context = ExecutionContext {
         step: 0,
         state: rules_list[0][0].current_state,
-        position: CounterExpr::Constant(0),
+        position: 0.into(),
     };
 
     let mut tape = Tape::new(tape_blocks);

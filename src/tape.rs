@@ -15,7 +15,7 @@ impl Tape {
     pub fn size(&self) -> CounterExpr {
         self.blocks
             .iter()
-            .fold(CounterExpr::Constant(0), |acc, block| acc + block.size())
+            .fold(0.into(), |acc, block| acc + block.size())
     }
 
     pub fn block(&self, block_index: i64) -> &Block {
@@ -35,7 +35,7 @@ impl Tape {
         // 空のブロックは削除
         let mut tape = tape.clone();
         for i in (0..tape.blocks.len()).rev() {
-            if tape.blocks[i].size() == CounterExpr::Constant(0) {
+            if tape.blocks[i].size() == 0.into() {
                 tape.blocks.remove(i);
             }
         }
@@ -120,7 +120,7 @@ impl Tape {
     }
 
     pub fn find_block(&self, index: CounterExpr) -> (i64, CounterExpr) {
-        let mut work = CounterExpr::Constant(0);
+        let mut work: CounterExpr = 0.into();
         for (i, block) in self.blocks.iter().enumerate() {
             if work <= index && index < work + block.size() {
                 return (i as i64, index - work);
@@ -135,7 +135,7 @@ impl Tape {
         let (block_index, block_rem) = self.find_block(index);
 
         // ブロックの残り部分が0であれば分割の必要はない
-        if block_rem == CounterExpr::Constant(0) {
+        if block_rem == 0.into() {
             return None;
         }
 
@@ -155,14 +155,14 @@ impl Tape {
 
         // 区切りを分割
         self.split_at(start_index);
-        if self.size() > end_index + CounterExpr::Constant(1) {
-            self.split_at(end_index + CounterExpr::Constant(1));
+        if self.size() > end_index + 1 {
+            self.split_at(end_index + 1);
         }
 
         // indexを取得
         let (start_block_index, start_block_rem) = self.find_block(start_index);
         let (end_block_index, end_block_rem) = self.find_block(end_index);
-        assert!(start_block_rem == CounterExpr::Constant(0));
+        assert!(start_block_rem == 0.into());
         assert!(end_block_rem + 1 == self.blocks[end_block_index as usize].size());
 
         // 指定範囲を返す
@@ -189,7 +189,7 @@ impl Tape {
     /// Show the head without expanding or splitting symbolic repeat blocks.
     pub fn debug_with_position(&self, position: CounterExpr) -> String {
         let mut text = String::new();
-        let mut start = CounterExpr::Constant(0);
+        let mut start = 0.into();
         let mut marker = None;
         for (i, block) in self.blocks.iter().enumerate() {
             if i > 0 {
@@ -198,7 +198,7 @@ impl Tape {
             let column = text.len();
             let end = start + block.size();
             if start <= position && position < end {
-                let offset = position - start;
+                let offset: CounterExpr = position - start;
                 let cell_column = block
                     .as_symbols()
                     .and_then(|_| offset.as_constant())
@@ -216,7 +216,7 @@ impl Tape {
             text.push_str("(empty)");
         }
         let (column, label) = marker.unwrap_or_else(|| {
-            if position < CounterExpr::Constant(0) {
+            if position < 0.into() {
                 (
                     0,
                     format!("pos:{position} (left blank, distance:{})", position * -1),
