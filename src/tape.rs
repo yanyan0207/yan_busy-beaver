@@ -49,7 +49,9 @@ impl Tape {
     pub fn compare_with_debug(lhs: &Tape, rhs: &Tape, debug: bool) -> bool {
         // サイズを調べる
         if lhs.size() != rhs.size() {
-            if debug { println!("    {lhs}\n    {rhs}\n"); }
+            if debug {
+                println!("    {lhs}\n    {rhs}\n");
+            }
             return false;
         }
 
@@ -58,7 +60,9 @@ impl Tape {
 
         // ブロックを比較する
         loop {
-            if debug { println!("    {lhs}\n    {rhs}\n"); }
+            if debug {
+                println!("    {lhs}\n    {rhs}\n");
+            }
             if lhs.blocks().is_empty() && rhs.blocks().is_empty() {
                 return true;
             } else if lhs.blocks().is_empty() || rhs.blocks().is_empty() {
@@ -172,7 +176,9 @@ impl std::fmt::Display for Tape {
             return write!(f, "(empty)");
         }
         for (i, block) in self.blocks.iter().enumerate() {
-            if i > 0 { write!(f, " | ")?; }
+            if i > 0 {
+                write!(f, " | ")?;
+            }
             write!(f, "{block}")?;
         }
         Ok(())
@@ -186,26 +192,40 @@ impl Tape {
         let mut start = CounterExpr::Constant(0);
         let mut marker = None;
         for (i, block) in self.blocks.iter().enumerate() {
-            if i > 0 { text.push_str(" | "); }
+            if i > 0 {
+                text.push_str(" | ");
+            }
             let column = text.len();
             let end = start + block.size();
             if start <= position && position < end {
                 let offset = position - start;
-                let cell_column = block.as_symbols()
+                let cell_column = block
+                    .as_symbols()
                     .and_then(|_| offset.as_constant())
                     .map(|offset| column + 1 + offset as usize)
                     .unwrap_or(column);
-                marker = Some((cell_column, format!("pos:{position} (block:{}, offset:{offset})", i + 1)));
+                marker = Some((
+                    cell_column,
+                    format!("pos:{position} (block:{}, offset:{offset})", i + 1),
+                ));
             }
             text.push_str(&block.to_string());
             start = end;
         }
-        if text.is_empty() { text.push_str("(empty)"); }
+        if text.is_empty() {
+            text.push_str("(empty)");
+        }
         let (column, label) = marker.unwrap_or_else(|| {
             if position < CounterExpr::Constant(0) {
-                (0, format!("pos:{position} (left blank, distance:{})", position * -1))
+                (
+                    0,
+                    format!("pos:{position} (left blank, distance:{})", position * -1),
+                )
             } else {
-                (text.len(), format!("pos:{position} (right blank, offset:{})", position - start))
+                (
+                    text.len(),
+                    format!("pos:{position} (right blank, offset:{})", position - start),
+                )
             }
         });
         format!("{text}\n          {}^ {label}", " ".repeat(column))

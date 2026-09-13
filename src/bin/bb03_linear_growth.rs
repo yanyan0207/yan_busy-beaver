@@ -76,9 +76,15 @@ fn reverse_pattern(pattern: &str) -> String {
 /// Run `check` on the pattern and/or its L/R mirror according to `mode`.
 fn check_with_reverse(pattern: &str, max_steps: usize, debug: bool, mode: ReverseMode) -> bool {
     if mode != ReverseMode::Only {
-        debug_println!(debug, "
+        debug_println!(
+            debug,
+            "
 {}
-PATTERN {} max_steps {}", "*".repeat(80), pattern, max_steps);
+PATTERN {} max_steps {}",
+            "*".repeat(80),
+            pattern,
+            max_steps
+        );
         if check(pattern, max_steps, debug).is_some() {
             return true;
         }
@@ -147,8 +153,11 @@ fn print_execution_records(records: &[RawExecutionRecord]) {
     let display_min = last_record.min_position;
     let display_max = last_record.max_position;
 
-    println!("
-{}", "=".repeat(80));
+    println!(
+        "
+{}",
+        "=".repeat(80)
+    );
     println!("EXECUTION   step is 1-based; *symbol is the head; ---- marks a min_position change");
     println!("tape display range: {display_min}..={display_max}");
     for (index, record) in records.iter().enumerate() {
@@ -179,8 +188,11 @@ fn print_execution_records(records: &[RawExecutionRecord]) {
 fn print_min_changed_sequences(records: &[RawExecutionRecord]) {
     use yan_busy_beaver::base::state_to_str;
 
-    println!("
-{}", "=".repeat(80));
+    println!(
+        "
+{}",
+        "=".repeat(80)
+    );
     println!("MIN-CHANGED STEPS (1-based) grouped by rule");
     let mut by_rule: Vec<(Rule, Vec<i64>)> = vec![];
     for w in records.windows(2) {
@@ -696,39 +708,42 @@ fn find_min_changed_sequences_by_rule(
     if debug {
         println!("MIN-CHANGED SEQUENCE CANDIDATES (steps 1-based)");
         if min_changed_sequences.is_empty() {
-            println!("  (no sequence with 2nd-order arithmetic differences; needs at least 5 min-changed steps per rule)");
+            println!(
+                "  (no sequence with 2nd-order arithmetic differences; needs at least 5 min-changed steps per rule)"
+            );
         }
     }
-    min_changed_sequences = min_changed_sequences
-        .into_iter()
-        .filter(|seq| {
-            let diff2 = get_diff_for_sequence_with_arithmetic_differences(seq, 2);
-            let next = next_for_sequence_with_arithmetic_differences(seq, 2);
-            let keep = diff2.is_some_and(|d| d > 0) && next > max_steps as i64;
-            if debug {
-                let diffs1 = seq.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
-                let diffs2 = diffs1.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
-                let verdict = if keep {
-                    "kept".to_string()
-                } else if !diff2.is_some_and(|d| d > 0) {
-                    format!("rejected: 2nd-order diff {:?} is not positive", diff2)
-                } else {
-                    format!("rejected: next change {} <= max_steps {}", next + 1, max_steps)
-                };
-                println!(
-                    "  steps {:?}
+    min_changed_sequences.retain(|seq| {
+        let diff2 = get_diff_for_sequence_with_arithmetic_differences(seq, 2);
+        let next = next_for_sequence_with_arithmetic_differences(seq, 2);
+        let keep = diff2.is_some_and(|d| d > 0) && next > max_steps as i64;
+        if debug {
+            let diffs1 = seq.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
+            let diffs2 = diffs1.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
+            let verdict = if keep {
+                "kept".to_string()
+            } else if !diff2.is_some_and(|d| d > 0) {
+                format!("rejected: 2nd-order diff {:?} is not positive", diff2)
+            } else {
+                format!(
+                    "rejected: next change {} <= max_steps {}",
+                    next + 1,
+                    max_steps
+                )
+            };
+            println!(
+                "  steps {:?}
     diffs {:?}
     diffs2 {:?}  next {}  => {}",
-                    seq.iter().map(|s| s + 1).collect::<Vec<_>>(),
-                    diffs1,
-                    diffs2,
-                    next + 1,
-                    verdict
-                );
-            }
-            keep
-        })
-        .collect();
+                seq.iter().map(|s| s + 1).collect::<Vec<_>>(),
+                diffs1,
+                diffs2,
+                next + 1,
+                verdict
+            );
+        }
+        keep
+    });
 
     if min_changed_sequences.is_empty() {
         return None;

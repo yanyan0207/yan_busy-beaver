@@ -22,7 +22,12 @@ pub fn process(context: &mut Context, tape: &mut Tape, transition: &Transition) 
     process_with_debug(context, tape, transition, false)
 }
 
-pub fn process_with_debug(context: &mut Context, tape: &mut Tape, transition: &Transition, debug: bool) -> Option<()> {
+pub fn process_with_debug(
+    context: &mut Context,
+    tape: &mut Tape,
+    transition: &Transition,
+    debug: bool,
+) -> Option<()> {
     // 入力テープの範囲を計算
     let mut io_range = transition.io_range() + context.position;
 
@@ -48,7 +53,12 @@ pub fn process_with_debug(context: &mut Context, tape: &mut Tape, transition: &T
         );
         io_range = io_range + CounterExpr::LinearFixed(remain);
         context.position += CounterExpr::LinearFixed(remain);
-        crate::debug_println!(debug, "  io_range {}..={} (after left extension)", io_range.start, io_range.end);
+        crate::debug_println!(
+            debug,
+            "  io_range {}..={} (after left extension)",
+            io_range.start,
+            io_range.end
+        );
     }
 
     // テープから
@@ -57,9 +67,18 @@ pub fn process_with_debug(context: &mut Context, tape: &mut Tape, transition: &T
     // ブロックが想定通りか比較
     let cutted_tape = Tape::new(blocks_in_range);
     let is_equal = Tape::compare_with_debug(&cutted_tape, transition.input_tape(), debug);
-    crate::debug_println!(debug, "  input compare: {}", if is_equal { "MATCH" } else { "MISMATCH" });
+    crate::debug_println!(
+        debug,
+        "  input compare: {}",
+        if is_equal { "MATCH" } else { "MISMATCH" }
+    );
     if !is_equal {
-        crate::debug_println!(debug, "  input mismatch at {}..={}", io_range.start, io_range.end);
+        crate::debug_println!(
+            debug,
+            "  input mismatch at {}..={}",
+            io_range.start,
+            io_range.end
+        );
         crate::debug_println!(debug, "    actual   {}", cutted_tape);
         crate::debug_println!(debug, "    expected {}", transition.input_tape());
         return None;
