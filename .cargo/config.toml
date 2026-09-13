@@ -1,3 +1,8 @@
 [alias]
-lg_03 = ["run", "--bin", "bb03_linear_growth", "--", "0RB 0LA 0LC 1RA 1LA 0RH"]
-lg_04 = ["run", "--bin", "bb03_linear_growth", "--", "0RB 0RH 0LC 1RA 0LD 0RH 1LA 1LC"]
+lg_03 = ["run", "--bin", "bb03_linear_growth", "--release", "--", "3"]
+lg_04 = ["run", "--bin", "bb03_linear_growth", "--release", "--", "4"]
+
+lg_03_ok = ["run", "--bin", "bb03_linear_growth", "--", "0RB 0LA 0LC 1RA 1LA 0RH"]
+lg_03_ng = ["run", "--bin", "bb03_linear_growth", "--", "0RB 0LA 1LA 1RC 1RB 0RH"]
+lg_04_ok = ["run", "--bin", "bb03_linear_growth", "--", "0RB 0RH 0LC 1RA 0LD 0RH 1LA 1LC"]
+lg_04_ng = ["run", "--bin", "bb03_linear_growth", "--", "0RB 0RH 0LC 0RA 0LD 0RH 1RA 1LC"]

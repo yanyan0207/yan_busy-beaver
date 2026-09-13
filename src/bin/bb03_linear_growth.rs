@@ -18,9 +18,9 @@ use yan_busy_beaver::block::RepeatedSymbolsLinearBlock;
 use yan_busy_beaver::block::SymbolsBlock;
 use yan_busy_beaver::counter::CounterExpr;
 use yan_busy_beaver::counter::FixedLinearExpr;
+use yan_busy_beaver::debug_println;
 use yan_busy_beaver::interpreter::Context;
 use yan_busy_beaver::interpreter::process_with_debug;
-use yan_busy_beaver::debug_println;
 use yan_busy_beaver::tape::Tape;
 use yan_busy_beaver::transition::RepeatedRulesLinearTransition;
 use yan_busy_beaver::transition::RulesTransition;
@@ -37,27 +37,179 @@ struct RawExecutionRecord {
 
 #[derive(Parser)]
 struct Args {
-    pattern: String,
+    #[arg(required_unless_present = "csv", conflicts_with = "csv")]
+    pattern_or_state_num: Option<String>,
+    /// CSV input with a pattern column.
+    #[arg(long)]
+    csv: Option<std::path::PathBuf>,
+    #[arg(long, requires = "csv")]
+    output_dir: Option<std::path::PathBuf>,
     /// Maximum steps (default: 100 for a pattern, 1000 for CSV search).
-    #[clap(long, default_value_t = 100)]
-    max_steps: usize,
+    #[clap(long)]
+    max_steps: Option<usize>,
     /// Show execution, tape block, and comparison diagnostics.
-    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
-    debug: bool,
+    #[arg(long, action = clap::ArgAction::Set)]
+    debug: Option<bool>,
+    /// Pattern mode only: auto = try the pattern, then its L/R mirror; off = pattern only; only = mirror only.
+    #[arg(long, value_enum, default_value_t = ReverseMode::Auto, conflicts_with = "csv")]
+    reverse: ReverseMode,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum ReverseMode {
+    Auto,
+    Off,
+    Only,
+}
+
+fn reverse_pattern(pattern: &str) -> String {
+    pattern
+        .chars()
+        .map(|c| match c {
+            'L' => 'R',
+            'R' => 'L',
+            c => c,
+        })
+        .collect()
+}
+
+/// Run `check` on the pattern and/or its L/R mirror according to `mode`.
+fn check_with_reverse(pattern: &str, max_steps: usize, debug: bool, mode: ReverseMode) -> bool {
+    if mode != ReverseMode::Only {
+        debug_println!(debug, "
+{}
+PATTERN {} max_steps {}", "*".repeat(80), pattern, max_steps);
+        if check(pattern, max_steps, debug).is_some() {
+            return true;
+        }
+        if mode == ReverseMode::Off {
+            return false;
+        }
+    }
+    let reversed = reverse_pattern(pattern);
+    debug_println!(
+        debug,
+        "
+{}
+REVERSED PATTERN {} (from {}) max_steps {}",
+        "*".repeat(80),
+        reversed,
+        pattern,
+        max_steps
+    );
+    check(&reversed, max_steps, debug).is_some()
 }
 
 fn check(pattern: &str, max_steps: usize, debug: bool) -> Option<()> {
     // 実行履歴の取得
     let execution_records = get_execution_records(pattern, max_steps);
+    if debug {
+        print_execution_records(&execution_records);
+    }
 
     // minポジション変化点の取得(各Ruleグループごと)
-    let min_changed_sequences = find_min_changed_sequences_by_rule(&execution_records, max_steps)?;
+    if debug {
+        print_min_changed_sequences(&execution_records);
+    }
+    let min_changed_sequences =
+        find_min_changed_sequences_by_rule(&execution_records, max_steps, debug);
+    if min_changed_sequences.is_none() {
+        debug_println!(debug, "  => no candidate survived: unresolved");
+    }
+    let min_changed_sequences = min_changed_sequences?;
 
     // 各minポジション変化点のシーケンスに対して繰り返しブロックを探索
-    for min_changed_seq in min_changed_sequences {
-        check_min_changed_sequences(&min_changed_seq, &execution_records, debug);
+    for (index, min_changed_seq) in min_changed_sequences.iter().enumerate() {
+        debug_println!(
+            debug,
+            "
+{}
+MIN-CHANGED SEQUENCE {} steps(1-based) {:?}",
+            "#".repeat(80),
+            index + 1,
+            min_changed_seq.iter().map(|s| s + 1).collect::<Vec<_>>()
+        );
+        if check_min_changed_sequences(min_changed_seq, &execution_records, debug).is_some() {
+            return Some(());
+        }
     }
-    Some(())
+    None
+}
+
+/// Print every executed step in the same layout as `print_execution_cycles`,
+/// marking the steps where min_position moved.
+fn print_execution_records(records: &[RawExecutionRecord]) {
+    use yan_busy_beaver::base::state_to_str;
+
+    let Some(last_record) = records.last() else {
+        return;
+    };
+    let display_min = last_record.min_position;
+    let display_max = last_record.max_position;
+
+    println!("
+{}", "=".repeat(80));
+    println!("EXECUTION   step is 1-based; *symbol is the head; ---- marks a min_position change");
+    println!("tape display range: {display_min}..={display_max}");
+    for (index, record) in records.iter().enumerate() {
+        let min_changed = index > 0 && records[index - 1].min_position != record.min_position;
+        if min_changed {
+            println!(
+                "{} min {} -> {}",
+                "-".repeat(60),
+                records[index - 1].min_position,
+                record.min_position
+            );
+        }
+        println!(
+            "s:{:3} {}{} {}{}{}    {}",
+            index + 1,
+            state_to_str(record.rule.current_state),
+            symbol_to_str(record.rule.read_symbol),
+            symbol_to_str(record.rule.instruction.write_symbol),
+            dir_to_str(record.rule.instruction.dir),
+            state_to_str(record.rule.instruction.next_state),
+            format_record_tape(record, display_min, display_max),
+        );
+    }
+}
+
+/// Print where min_position moved, grouped by rule, and which groups formed an
+/// arithmetic sequence that survives until max_steps.
+fn print_min_changed_sequences(records: &[RawExecutionRecord]) {
+    use yan_busy_beaver::base::state_to_str;
+
+    println!("
+{}", "=".repeat(80));
+    println!("MIN-CHANGED STEPS (1-based) grouped by rule");
+    let mut by_rule: Vec<(Rule, Vec<i64>)> = vec![];
+    for w in records.windows(2) {
+        if w[0].min_position != w[1].min_position {
+            let step = w[1].step + 1;
+            match by_rule.iter_mut().find(|(rule, _)| *rule == w[1].rule) {
+                Some((_, steps)) => steps.push(step),
+                None => by_rule.push((w[1].rule, vec![step])),
+            }
+        }
+    }
+    if by_rule.is_empty() {
+        println!("  (min_position never changed)");
+    }
+    for (rule, steps) in &by_rule {
+        let diffs = steps.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
+        let diffs2 = diffs.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
+        println!(
+            "  {}{} {}{}{}  steps {:?}  diffs {:?}  diffs2 {:?}",
+            state_to_str(rule.current_state),
+            symbol_to_str(rule.read_symbol),
+            symbol_to_str(rule.instruction.write_symbol),
+            dir_to_str(rule.instruction.dir),
+            state_to_str(rule.instruction.next_state),
+            steps,
+            diffs,
+            diffs2
+        );
+    }
 }
 
 fn check_min_changed_sequences(
@@ -79,7 +231,17 @@ fn check_min_changed_sequences(
         .map(|i| execution_records[*i as usize - 1].data.as_slice())
         .collect::<Vec<_>>();
 
-    let repeated_execution_range = find_growing_repeat_block(&rules_list)?;
+    debug_println!(
+        debug,
+        "rule block lengths per cycle: {:?}",
+        rules_list.iter().map(|r| r.len()).collect::<Vec<_>>()
+    );
+    let repeated_execution_range = find_growing_repeat_block(&rules_list);
+    if repeated_execution_range.is_none() {
+        debug_println!(debug, "=> no growing repeat block in rules: unresolved");
+    }
+    let repeated_execution_range = repeated_execution_range?;
+    debug_println!(debug, "rule repeat ranges: {:?}", repeated_execution_range);
 
     // リピートを含むトランジションを構築
     let transitions = collect_blocks_with_repeated_range(
@@ -100,10 +262,22 @@ fn check_min_changed_sequences(
         },
     );
 
-    if debug { print_execution_cycles(min_changed_sequences, execution_records, &transitions); }
+    if debug {
+        print_execution_cycles(min_changed_sequences, execution_records, &transitions);
+    }
 
     // 各minポジション変化点の間の繰り返しテープブロックを探索
-    let repeated_tape_range = find_growing_repeat_block(&datas_list)?;
+    debug_println!(
+        debug,
+        "tape lengths per cycle: {:?}",
+        datas_list.iter().map(|d| d.len()).collect::<Vec<_>>()
+    );
+    let repeated_tape_range = find_growing_repeat_block(&datas_list);
+    if repeated_tape_range.is_none() {
+        debug_println!(debug, "=> no growing repeat block in tape: unresolved");
+    }
+    let repeated_tape_range = repeated_tape_range?;
+    debug_println!(debug, "tape repeat ranges: {:?}", repeated_tape_range);
 
     let tape_blocks = collect_blocks_with_repeated_range(
         datas_list[1],
@@ -136,32 +310,55 @@ fn check_min_changed_sequences(
         }
     }
     debug_println!(debug, "\n{}", "=".repeat(80));
-    debug_println!(debug, "TAPE BLOCKS   [symbols](repeat count), | = block boundary");
+    debug_println!(
+        debug,
+        "TAPE BLOCKS   [symbols](repeat count), | = block boundary"
+    );
     debug_println!(debug, "position: {}", context.position);
-    debug_println!(debug, "initial   {}", tape.debug_with_position(context.position));
+    debug_println!(
+        debug,
+        "initial   {}",
+        tape.debug_with_position(context.position)
+    );
     debug_println!(debug, "expected {}", tape_next);
     for (i, transition) in transitions.iter().enumerate() {
         debug_println!(debug, "  --- transition {} ---", i + 1);
-        debug_println!(debug, "  before  {}", tape.debug_with_position(context.position));
+        debug_println!(
+            debug,
+            "  before  {}",
+            tape.debug_with_position(context.position)
+        );
         debug_println!(debug, "  input   {}", transition.input_tape());
         debug_println!(debug, "  output  {}", transition.output_tape());
         let io_range = transition.io_range() + context.position;
-        debug_println!(debug, 
+        debug_println!(
+            debug,
             "  io_range {}..={} (tape coordinates, inclusive)",
-            io_range.start, io_range.end
+            io_range.start,
+            io_range.end
         );
         let result = process_with_debug(&mut context, &mut tape, transition, debug);
         if result.is_none() {
-            debug_println!(debug, "  after   {}", tape.debug_with_position(context.position));
-            debug_println!(debug, 
+            debug_println!(
+                debug,
+                "  after   {}",
+                tape.debug_with_position(context.position)
+            );
+            debug_println!(
+                debug,
                 "final after (input mismatch)\n          {}",
                 tape.debug_with_position(context.position)
             );
             return None;
         }
-        debug_println!(debug, "  after   {}", tape.debug_with_position(context.position));
+        debug_println!(
+            debug,
+            "  after   {}",
+            tape.debug_with_position(context.position)
+        );
     }
-    debug_println!(debug, 
+    debug_println!(
+        debug,
         "final after\n          {}",
         tape.debug_with_position(context.position)
     );
@@ -169,7 +366,8 @@ fn check_min_changed_sequences(
 
     // テープの繰り返しブロックを1回増やした状態で、同じか比較する
     let is_equal = Tape::compare_with_debug(&tape, &tape_next, debug);
-    debug_println!(debug, 
+    debug_println!(
+        debug,
         "final compare: {}",
         if is_equal { "MATCH" } else { "MISMATCH" }
     );
@@ -195,7 +393,7 @@ fn format_record_tape(record: &RawExecutionRecord, display_min: i64, display_max
         if position == record.position {
             tape.push_str(&format!("*{c}"));
         } else {
-            tape.push_str("{c}");
+            tape.push_str(&format!(" {c}"));
         }
     }
     tape
@@ -215,7 +413,7 @@ fn print_execution_cycles(
     let display_min = last_record.min_position;
     let display_max = last_record.max_position;
 
-    println!("step is 1-based; [symbol] is the head; x is outside min/max");
+    println!("step is 1-based; *symbol is the head; blank is outside min/max");
     println!("tape display range: {display_min}..={display_max}");
     for (cycle, window) in boundaries.windows(2).take(3).enumerate() {
         let mut cursor = window[0] as usize;
@@ -268,13 +466,156 @@ fn print_execution_cycles(
     }
 }
 
-fn main() {
+fn print_csv_progress(completed: usize, total: usize, counts: [usize; 2]) -> std::io::Result<()> {
+    use std::io::Write;
+    let filled = if total == 0 {
+        30
+    } else {
+        ((completed as u128 * 30) / total as u128) as usize
+    };
+    let mut stderr = std::io::stderr().lock();
+    write!(
+        stderr,
+        "\r[{}{}] {}/{} (d:{} u:{})",
+        "=".repeat(filled),
+        " ".repeat(30 - filled),
+        completed,
+        total,
+        counts[0],
+        counts[1]
+    )?;
+    stderr.flush()
+}
+
+fn check_csv(
+    input: &std::path::Path,
+    output: &std::path::Path,
+    max_steps: usize,
+    debug: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut reader = csv::Reader::from_path(input)?;
+    let column = reader
+        .headers()?
+        .iter()
+        .position(|h| h == "pattern")
+        .ok_or("Missing pattern column")?;
+    let records_start = reader.position().clone();
+    let total = reader
+        .records()
+        .try_fold(0usize, |count, row| row.map(|_| count + 1))?;
+    reader.seek(records_start)?;
+    std::fs::create_dir_all(output)?;
+    let input_path = input.canonicalize()?;
+    for name in ["decided.csv", "unresolved.csv"] {
+        let destination = output.join(name);
+        if destination.exists() && destination.canonicalize()? == input_path {
+            return Err("Output CSV would overwrite the input".into());
+        }
+    }
+    eprintln!("CSV input:      {}", input.display());
+    eprintln!("CSV decided:    {}", output.join("decided.csv").display());
+    eprintln!(
+        "CSV unresolved: {}",
+        output.join("unresolved.csv").display()
+    );
+    let mut decided = csv::Writer::from_path(output.join("decided.csv"))?;
+    let mut unresolved = csv::Writer::from_path(output.join("unresolved.csv"))?;
+    for writer in [&mut decided, &mut unresolved] {
+        writer.write_record(["pattern", "result", "max_steps"])?;
+    }
+    let mut counts = [0usize; 2];
+    print_csv_progress(0, total, counts)?;
+    for (index, row) in reader.records().enumerate() {
+        let row = row?;
+        let pattern = row
+            .get(column)
+            .filter(|s| !s.trim().is_empty())
+            .ok_or("Empty pattern")?;
+        // Preserve unexpected failures instead of recording them as unresolved.
+        let result = std::panic::catch_unwind(|| {
+            check_with_reverse(pattern, max_steps, debug, ReverseMode::Auto)
+        });
+        let matched = match result {
+            Ok(value) => value,
+            Err(payload) => {
+                decided.flush()?;
+                unresolved.flush()?;
+                eprintln!("CSV record {} failed: {}", index + 1, pattern);
+                std::panic::resume_unwind(payload);
+            }
+        };
+        let limit = max_steps.to_string();
+        if matched {
+            decided.write_record([pattern, "loop_candidate_detected", &limit])?;
+            counts[0] += 1;
+        } else {
+            unresolved.write_record([pattern, "unresolved", &limit])?;
+            counts[1] += 1;
+        }
+        print_csv_progress(index + 1, total, counts)?;
+    }
+    eprintln!();
+    decided.flush()?;
+    unresolved.flush()?;
+    eprintln!(
+        "CSV summary:    decided={} unresolved={} (total {})",
+        counts[0], counts[1], total
+    );
+    println!(
+        "{}: decided={} unresolved={} -> {}",
+        input.display(),
+        counts[0],
+        counts[1],
+        output.display()
+    );
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-
-    debug_println!(args.debug, "pattern {} max_steps {}", args.pattern, args.max_steps);
-
-    // パターンに対してminポジション変化点の繰り返しブロックをチェック
-    check(&args.pattern, args.max_steps, args.debug);
+    if let Some(input) = args.csv {
+        let output = args.output_dir.unwrap_or_else(|| {
+            input
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join("03_linear_step_growth_loop")
+        });
+        return check_csv(
+            &input,
+            &output,
+            args.max_steps.unwrap_or(1000),
+            args.debug.unwrap_or(false),
+        );
+    }
+    let pattern_or_state_num = args.pattern_or_state_num.expect("required by clap");
+    match pattern_or_state_num.parse::<u8>() {
+        Ok(state) => {
+            let base = std::path::PathBuf::from(format!("results/bb_quest_{state}"));
+            let input = base.join("02_check_loop/unresolved.csv");
+            check_csv(
+                &input,
+                &base.join("03_linear_step_growth_loop"),
+                args.max_steps.unwrap_or(1000),
+                args.debug.unwrap_or(false),
+            )?;
+        }
+        Err(_) => {
+            let pattern = pattern_or_state_num;
+            let max_steps = args.max_steps.unwrap_or(100);
+            let debug = args.debug.unwrap_or(true);
+            let matched = check_with_reverse(&pattern, max_steps, debug, args.reverse);
+            println!(
+                "{}: {}",
+                pattern,
+                if matched {
+                    "loop_candidate_detected"
+                } else {
+                    "unresolved"
+                }
+            );
+        }
+    }
+    Ok(())
 }
 
 // 指定されたパターンに対して実行履歴を取得する関数
@@ -328,6 +669,7 @@ fn get_execution_records(pattern: &str, max_steps: usize) -> Vec<RawExecutionRec
 fn find_min_changed_sequences_by_rule(
     execution_records: &[RawExecutionRecord],
     max_steps: usize,
+    debug: bool,
 ) -> Option<Vec<Vec<i64>>> {
     // min_positionが変わったところを、Ruleグループごとに集約
     let min_changed_by_rule = execution_records
@@ -351,12 +693,41 @@ fn find_min_changed_sequences_by_rule(
     }
 
     // 等差数列の差分が正で、次の変化が最大ステップを超えるものだけを残す
+    if debug {
+        println!("MIN-CHANGED SEQUENCE CANDIDATES (steps 1-based)");
+        if min_changed_sequences.is_empty() {
+            println!("  (no sequence with 2nd-order arithmetic differences; needs at least 5 min-changed steps per rule)");
+        }
+    }
     min_changed_sequences = min_changed_sequences
         .into_iter()
         .filter(|seq| {
-            get_diff_for_sequence_with_arithmetic_differences(seq, 2).is_some_and(|diff| diff > 0)
+            let diff2 = get_diff_for_sequence_with_arithmetic_differences(seq, 2);
+            let next = next_for_sequence_with_arithmetic_differences(seq, 2);
+            let keep = diff2.is_some_and(|d| d > 0) && next > max_steps as i64;
+            if debug {
+                let diffs1 = seq.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
+                let diffs2 = diffs1.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
+                let verdict = if keep {
+                    "kept".to_string()
+                } else if !diff2.is_some_and(|d| d > 0) {
+                    format!("rejected: 2nd-order diff {:?} is not positive", diff2)
+                } else {
+                    format!("rejected: next change {} <= max_steps {}", next + 1, max_steps)
+                };
+                println!(
+                    "  steps {:?}
+    diffs {:?}
+    diffs2 {:?}  next {}  => {}",
+                    seq.iter().map(|s| s + 1).collect::<Vec<_>>(),
+                    diffs1,
+                    diffs2,
+                    next + 1,
+                    verdict
+                );
+            }
+            keep
         })
-        .filter(|seq| next_for_sequence_with_arithmetic_differences(seq, 2) > max_steps as i64)
         .collect();
 
     if min_changed_sequences.is_empty() {
